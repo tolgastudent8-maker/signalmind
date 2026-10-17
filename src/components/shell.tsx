@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { CommandPalette, PaletteButton } from "./command-palette";
 import { TickerTape } from "./market";
+import { NewsTicker } from "./news-ticker";
 import { usePoll, fmtPrice, timeAgo } from "./ui";
 
 type Status = {
@@ -124,6 +125,7 @@ export function Shell({ children }: { children: ReactNode }) {
           ))}
         </nav>
         <TickerTape />
+        <NewsTicker />
       </header>
       {s && !s.ai.configured && (
         <div className="border-b border-judge/30 bg-judge/10">
