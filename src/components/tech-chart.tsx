@@ -411,12 +411,15 @@ export function fmtBand(f: number): string {
 export function DepthChart({ curve, mid, range = 0.02 }: { curve: { bids: { px: number; cum: number }[]; asks: { px: number; cum: number }[] }; mid: number; range?: number }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<{ side: "bid" | "ask"; px: number; cum: number } | null>(null);
-  const H = 150;
+  const H = 170;
   const B = 18;
+  const L = 48; // y-axis label gutter: the $ scale is what tells a $5M book from a $50k one
   const lo = curve.bids[curve.bids.length - 1]?.px ?? mid * 0.98;
   const hi = curve.asks[curve.asks.length - 1]?.px ?? mid * 1.02;
+  const bidTotal = curve.bids[curve.bids.length - 1]?.cum ?? 0;
+  const askTotal = curve.asks[curve.asks.length - 1]?.cum ?? 0;
   const maxCum = Math.max(1, ...curve.bids.map((p) => p.cum), ...curve.asks.map((p) => p.cum));
-  const xs = (px: number) => ((px - lo) / (hi - lo)) * width;
+  const xs = (px: number) => L + ((px - lo) / (hi - lo)) * (width - L);
   const ys = (c: number) => H - B - (c / maxCum) * (H - B - 8);
   const area = (pts: { px: number; cum: number }[]) => {
     if (!pts.length) return "";
@@ -432,7 +435,7 @@ export function DepthChart({ curve, mid, range = 0.02 }: { curve: { bids: { px: 
 
   function onMove(e: React.MouseEvent<SVGSVGElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
-    const px = lo + ((e.clientX - rect.left) / width) * (hi - lo);
+    const px = lo + ((e.clientX - rect.left - L) / (width - L)) * (hi - lo);
     const side = px < mid ? curve.bids : curve.asks;
     const p = [...side].sort((a, b) => Math.abs(a.px - px) - Math.abs(b.px - px))[0];
     if (p) setHover({ side: px < mid ? "bid" : "ask", ...p });
@@ -440,13 +443,33 @@ export function DepthChart({ curve, mid, range = 0.02 }: { curve: { bids: { px: 
 
   return (
     <div ref={ref} className="relative">
+      <div className="num mb-2 flex justify-between text-[12px]">
+        <span>
+          <span className="text-ink-400">alış </span>
+          <span className="font-semibold text-up">${fmtCompact(bidTotal)}</span>
+          <span className="text-ink-500"> · {fmtPrice(lo)}</span>
+        </span>
+        <span>
+          <span className="text-ink-500">{fmtPrice(hi)} · </span>
+          <span className="font-semibold text-down">${fmtCompact(askTotal)}</span>
+          <span className="text-ink-400"> satış</span>
+        </span>
+      </div>
       {width > 0 && (
         <svg width={width} height={H} onMouseMove={onMove} onMouseLeave={() => setHover(null)} role="img" aria-label="Emir defteri derinlik grafiği">
+          {[0.5, 1].map((f) => (
+            <g key={f}>
+              <line x1={L} x2={width} y1={ys(maxCum * f)} y2={ys(maxCum * f)} stroke="#2a3344" strokeDasharray="2 4" />
+              <text x={L - 6} y={ys(maxCum * f) + 3} fontSize="10" fill={C.text} textAnchor="end" className="num">
+                ${fmtCompact(maxCum * f)}
+              </text>
+            </g>
+          ))}
           <path d={area(curve.bids)} fill={C.up} fillOpacity={0.18} stroke={C.up} strokeWidth={1.5} />
           <path d={area(curve.asks)} fill={C.down} fillOpacity={0.18} stroke={C.down} strokeWidth={1.5} />
           <line x1={xs(mid)} x2={xs(mid)} y1={4} y2={H - B} stroke="#5b667d" strokeDasharray="3 3" />
           {[-1, -0.5, 0, 0.5, 1].map((k) => (
-            <text key={k} x={Math.min(width - 18, Math.max(18, xs(mid * (1 + k * range))))} y={H - 4} fontSize="10" fill={C.text} textAnchor="middle" className="num">
+            <text key={k} x={Math.min(width - 18, Math.max(L + 18, xs(mid * (1 + k * range))))} y={H - 4} fontSize="10" fill={C.text} textAnchor="middle" className="num">
               {k === 0 ? "orta" : `${k > 0 ? "+" : "−"}${fmtBand(Math.abs(k) * range)}`}
             </text>
           ))}
