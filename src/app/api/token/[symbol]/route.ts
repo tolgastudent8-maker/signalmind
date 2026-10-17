@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { candles, midOf, orderbook, tickers, universe } from "@/lib/market.ts";
 import { LIQUID_TRY_VOL, tokenPremium } from "@/lib/turkey.ts";
 import { okxCoinNews, tokenStories } from "@/lib/token-news.ts";
+import { ensureFeeds } from "@/lib/scheduler.ts";
 import { atr, bollinger, bookCoverage, bookStats, depthCurve, ema, last, macd, rsi } from "@/lib/indicators.ts";
 
 export const runtime = "nodejs";
@@ -18,7 +19,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ symbol: string 
   const token = uni.find((u) => u.symbol === symbol);
   if (!token) return NextResponse.json({ error: "Token OKX TR evreninde değil" }, { status: 404 });
 
-  const [series, book, all, okxNews] = await Promise.all([
+  const [, series, book, all, okxNews] = await Promise.all([
+    ensureFeeds(), // archive stories for the news card (on demand on serverless hosts)
     candles(token.instId, bar, BARS[bar]),
     orderbook(token.instId, 400).catch(() => null),
     tickers(),

@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
-  const r = getCheck(id);
+  const r = await getCheck(id);
   if (!r) return NextResponse.json({ error: "Denetim bulunamadı" }, { status: 404 });
   const c = r.check;
   if (!c.verdict || !c.final_decision || !c.verdict_hash) return NextResponse.json({ error: "Bu denetimin henüz nihai kararı yok" }, { status: 409 });

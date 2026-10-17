@@ -1,8 +1,8 @@
-import { db } from "../db.ts";
 import { ALLOWED_ASSETS, TIERS, resetTrust, trustOf, trustSince } from "./policy.ts";
 import { DEMO_BOT, SCENARIOS } from "./scenarios.ts";
 import type { FinalVerdict, OrderProposal } from "./types.ts";
 import { chainInfo, waitForCheck, type EvidenceRef } from "./agent.ts";
+import { store, type CheckRecord } from "./store.ts";
 import { atkHasCredentials } from "../atk.ts";
 import { aiInfo } from "../agents/llm.ts";
 
@@ -24,41 +24,49 @@ export type CheckRow = {
   finished_at: number | null;
 };
 
-type Raw = Omit<CheckRow, "proposal" | "verdict"> & { proposal_json: string; verdict_json: string | null };
-const parse = ({ proposal_json, verdict_json, ...r }: Raw): CheckRow => ({ ...r, proposal: JSON.parse(proposal_json), verdict: verdict_json ? JSON.parse(verdict_json) : null });
+const parse = ({ proposal_json, verdict_json, ...r }: CheckRecord): CheckRow => ({ ...r, proposal: JSON.parse(proposal_json), verdict: verdict_json ? JSON.parse(verdict_json) : null });
 
 const gRun = globalThis as unknown as { __signalmindGuardRunning?: Map<string, Promise<void>> };
 
-/** Checks left 'running' by a restarted server can never finish. */
-function closeOrphans() {
+/**
+ * An audit still 'running' long after any audit could finish was cut off (server restart,
+ * serverless timeout). Age-based, so one instance never closes another instance's live audit.
+ */
+const ORPHAN_MS = 3 * 60_000;
+async function closeOrphans(rows: CheckRecord[]): Promise<CheckRecord[]> {
   const running = gRun.__signalmindGuardRunning ?? new Map();
-  const ids = (db().prepare(`SELECT id FROM guard_checks WHERE status = 'running'`).all() as { id: string }[]).map((r) => r.id).filter((id) => !running.has(id));
-  for (const id of ids) db().prepare(`UPDATE guard_checks SET status = 'error', error = 'Sunucu yeniden başladığı için denetim yarıda kaldı', finished_at = ? WHERE id = ?`).run(Date.now(), id);
+  const now = Date.now();
+  for (const r of rows) {
+    if (r.status === "running" && !running.has(r.id) && now - r.created_at > ORPHAN_MS) {
+      const patch = { status: "error" as const, error: "Denetim yarıda kaldı (sunucu yeniden başladı ya da süre doldu)", finished_at: now };
+      await store().updateCheck(r.id, patch);
+      Object.assign(r, patch);
+    }
+  }
+  return rows;
 }
 
-export function listChecks(limit = 30): CheckRow[] {
-  closeOrphans();
-  return (db().prepare(`SELECT * FROM guard_checks ORDER BY created_at DESC LIMIT ?`).all(limit) as Raw[]).map(parse);
+export async function listChecks(limit = 30): Promise<CheckRow[]> {
+  return (await closeOrphans(await store().listChecks(limit))).map(parse);
 }
 
-export function getCheck(id: string): { check: CheckRow; events: { id: number; ts: number; kind: string; title: string; payload: unknown }[] } | null {
-  const row = db().prepare(`SELECT * FROM guard_checks WHERE id = ?`).get(id) as Raw | undefined;
+export async function getCheck(id: string): Promise<{ check: CheckRow; events: { id: number; ts: number; kind: string; title: string; payload: unknown }[] } | null> {
+  const row = await store().getCheck(id);
   if (!row) return null;
-  const events = (db().prepare(`SELECT id, ts, kind, title, payload_json FROM guard_events WHERE check_id = ? ORDER BY id`).all(id) as { id: number; ts: number; kind: string; title: string; payload_json: string | null }[]).map(
-    ({ payload_json, ...e }) => ({ ...e, payload: payload_json ? JSON.parse(payload_json) : null }),
-  );
+  const events = (await store().listEvents(id)).map(({ payload_json, ...e }) => ({ ...e, payload: payload_json ? JSON.parse(payload_json) : null }));
   return { check: parse(row), events };
 }
 
-export function guardOverview() {
+export async function guardOverview() {
+  const [trust, since, checks] = await Promise.all([trustOf(DEMO_BOT), trustSince(DEMO_BOT), listChecks(20)]);
   return {
     bot: DEMO_BOT,
-    trust: trustOf(DEMO_BOT),
-    trustSince: trustSince(DEMO_BOT),
+    trust,
+    trustSince: since,
     tiers: TIERS,
     allowedAssets: ALLOWED_ASSETS,
     scenarios: SCENARIOS.map(({ id, title, expectation }) => ({ id, title, expectation })),
-    checks: listChecks(20),
+    checks,
     layers: { chain: chainInfo(), atkNewsCredentials: atkHasCredentials(), ai: aiInfo() },
   };
 }
@@ -67,11 +75,11 @@ export function guardOverview() {
  * Demo reset: the bot's earned tier starts again from "Yeni". Audit history (and its Fuji
  * records) is kept; earlier audits are shown as "önceki demo" and no longer count as trust.
  */
-export function resetGuardHistory(): number {
+export async function resetGuardHistory(): Promise<number> {
   const running = gRun.__signalmindGuardRunning ?? new Map();
   if (running.size) return -1;
-  resetTrust(DEMO_BOT);
-  return Number((db().prepare(`SELECT COUNT(*) AS n FROM guard_checks WHERE bot = ?`).get(DEMO_BOT) as { n: number }).n);
+  await resetTrust(DEMO_BOT);
+  return (await store().checksOf(DEMO_BOT)).length;
 }
 
 export { waitForCheck };

@@ -1,11 +1,14 @@
-import { NextResponse } from "next/server";
-import { GuardError, startCheck } from "@/lib/guard/agent.ts";
+import { NextResponse, after } from "next/server";
+import { GuardError, startCheck, waitForCheck } from "@/lib/guard/agent.ts";
 import { guardOverview, resetGuardHistory } from "@/lib/guard/queries.ts";
 import { SCENARIOS } from "@/lib/guard/scenarios.ts";
+import { ensureFeeds } from "@/lib/scheduler.ts";
 import type { OrderProposal } from "@/lib/guard/types.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+/** An audit takes 10–20 s plus Fuji anchoring; this covers it on serverless hosts. */
+export const maxDuration = 60;
 
 function invalidProposal(p: OrderProposal): string | null {
   if (!/^[A-Z0-9]{2,10}-USDT$/i.test(p.instId)) return "instId 'ETH-USDT' biçiminde olmalı";
@@ -17,12 +20,12 @@ function invalidProposal(p: OrderProposal): string | null {
 }
 
 export async function GET() {
-  return NextResponse.json(guardOverview());
+  return NextResponse.json(await guardOverview());
 }
 
 /** Demo reset of the local audit history; refuses while an audit is running. */
 export async function DELETE() {
-  const n = resetGuardHistory();
+  const n = await resetGuardHistory();
   if (n < 0) return NextResponse.json({ error: "Çalışan bir denetim var; bitince tekrar deneyin." }, { status: 409 });
   return NextResponse.json({ kept: n });
 }
@@ -33,6 +36,9 @@ export async function POST(req: Request) {
   let proposal = body.proposal;
   const scenario = body.scenario ? SCENARIOS.find((s) => s.id === body.scenario) : undefined;
   if (body.scenario && !scenario) return NextResponse.json({ error: "Senaryo bulunamadı" }, { status: 400 });
+  // The verified/oversize scenarios pick a live story, and the audit searches the archive:
+  // make sure this instance has a fresh one (no-op when the background loop keeps it fresh).
+  await ensureFeeds();
   if (scenario) proposal = scenario.build();
   if (!proposal || !proposal.instId || !(proposal.notionalUsd > 0) || !Array.isArray(proposal.evidence)) {
     return NextResponse.json({ error: "Geçerli bir emir önerisi gerekli (bot, side, instId, notionalUsd, reason, evidence[])" }, { status: 400 });
@@ -51,7 +57,11 @@ export async function POST(req: Request) {
     };
   }
   try {
-    return NextResponse.json({ id: startCheck(proposal, scenario?.id ?? null) });
+    const id = await startCheck(proposal, scenario?.id ?? null);
+    // Serverless hosts freeze a function once it has answered; keep this one alive until the
+    // audit (model, tools, Fuji anchoring) has finished. A no-op wait on a normal server.
+    after(() => waitForCheck(id));
+    return NextResponse.json({ id });
   } catch (e) {
     if (e instanceof GuardError) return NextResponse.json({ error: e.message }, { status: 400 });
     throw e;

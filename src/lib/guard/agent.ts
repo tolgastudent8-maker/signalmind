@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { atkCall, atkTools, atkHasCredentials } from "../atk.ts";
 import { anchorVerdict, chainStatus, verdictHash, type ChainStatus } from "../chain.ts";
-import { db } from "../db.ts";
+import { store } from "./store.ts";
 import { aiConfigured, aiInfo, structuredWithTools, type ToolSpec, type Usage } from "../agents/llm.ts";
 import { checkPolicy, MIN_INDEPENDENT_SOURCES, type PolicyResult } from "./policy.ts";
 import { independence, injectionHits, searchLocalNews } from "./evidence.ts";
@@ -19,10 +19,20 @@ const ATK_NEWS = ["news_search", "news_get_by_coin", "news_get_coin_sentiment"];
 
 type EventKind = "start" | "plan" | "tool" | "info" | "decision" | "override" | "human" | "chain" | "error" | "done";
 
-export function emit(checkId: string, kind: EventKind, title: string, payload?: unknown) {
-  db()
-    .prepare(`INSERT INTO guard_events (check_id, ts, kind, title, payload_json) VALUES (?, ?, ?, ?, ?)`)
-    .run(checkId, Date.now(), kind, title, payload === undefined ? null : JSON.stringify(payload));
+// Events are written through a per-audit queue: callers fire and forget, yet the trace keeps
+// its order even when the store is remote (Redis over HTTP).
+const eventQueues = new Map<string, Promise<void>>();
+
+export function emit(checkId: string, kind: EventKind, title: string, payload?: unknown): Promise<void> {
+  const rec = { ts: Date.now(), kind, title, payload_json: payload === undefined ? null : JSON.stringify(payload) };
+  const next = (eventQueues.get(checkId) ?? Promise.resolve()).then(() => store().addEvent(checkId, rec)).catch(() => {});
+  eventQueues.set(checkId, next);
+  return next;
+}
+
+async function flushEvents(checkId: string): Promise<void> {
+  await eventQueues.get(checkId);
+  eventQueues.delete(checkId);
 }
 
 const SYSTEM = `Sen SignalMind Guard'sın: bir trading ajanının emrini borsaya gitmeden ÖNCE denetleyen bağımsız bir denetçi ajansın.
@@ -209,7 +219,7 @@ export function hashVerdict(checkId: string, proposal: OrderProposal, verdict: F
 async function runCheck(checkId: string, proposal: OrderProposal): Promise<void> {
   const ai = aiInfo();
   emit(checkId, "start", `${proposal.bot}: ${proposal.side === "buy" ? "ALIM" : "SATIM"} ${proposal.instId} · ${proposal.notionalUsd} USD`, { proposal, model: `${ai.label} ${ai.model}`, atkNewsCredentials: atkHasCredentials() });
-  const policy = checkPolicy(proposal);
+  const policy = await checkPolicy(proposal);
   const reg: Registry = new Map(proposal.evidence.map((e, i) => [`bot:${i + 1}`, { source: e.source, kind: "bot" as const, title: e.text, url: e.url ?? null, published_at: e.published_at ?? null }]));
   const tools = await toolSpecs();
   emit(checkId, "info", `${tools.length} araç hazır · ATK: ${tools.filter((t) => t.name.startsWith("market_") || t.name.startsWith("news_")).length}`, { tools: tools.map((t) => t.name) });
@@ -246,9 +256,15 @@ ${proposal.evidence.map((e, i) => `[bot:${i + 1}] kaynak="${e.source}" zaman="${
   const awaiting = verdict.decision === "escalate";
   const finalDecision = awaiting ? null : verdict.decision;
   const hash = finalDecision ? hashVerdict(checkId, proposal, verdict, finalDecision) : null;
-  db()
-    .prepare(`UPDATE guard_checks SET status = ?, decision = ?, final_decision = ?, decided_by = ?, verdict_json = ?, verdict_hash = ?, finished_at = ? WHERE id = ?`)
-    .run(awaiting ? "awaiting_human" : "done", verdict.decision, finalDecision, finalDecision ? "guard" : null, JSON.stringify({ ...verdict, usage, toolCalls: r.toolCalls.length, evidence: Object.fromEntries(reg) }), hash, awaiting ? null : Date.now(), checkId);
+  await store().updateCheck(checkId, {
+    status: awaiting ? "awaiting_human" : "done",
+    decision: verdict.decision,
+    final_decision: finalDecision,
+    decided_by: finalDecision ? "guard" : null,
+    verdict_json: JSON.stringify({ ...verdict, usage, toolCalls: r.toolCalls.length, evidence: Object.fromEntries(reg) }),
+    verdict_hash: hash,
+    finished_at: awaiting ? null : Date.now(),
+  });
   if (awaiting) emit(checkId, "human", "İnsan onayı bekleniyor", { question: verdict.human_question });
   else {
     emit(checkId, "done", verdict.decision === "approve" ? "Emir onaylandı" : "Emir reddedildi", { hash });
@@ -258,18 +274,15 @@ ${proposal.evidence.map((e, i) => `[bot:${i + 1}] kaynak="${e.source}" zaman="${
 
 /** Human answer to an escalation. Only the person can widen authority beyond policy. */
 export async function resolveHuman(checkId: string, approve: boolean): Promise<void> {
-  const row = db().prepare(`SELECT status, proposal_json, verdict_json FROM guard_checks WHERE id = ?`).get(checkId) as
-    | { status: string; proposal_json: string; verdict_json: string }
-    | undefined;
+  const row = await store().getCheck(checkId);
   if (!row) throw new GuardError("Denetim bulunamadı");
-  if (row.status !== "awaiting_human") throw new GuardError("Bu denetim insan onayı beklemiyor");
+  if (row.status !== "awaiting_human" || !row.verdict_json) throw new GuardError("Bu denetim insan onayı beklemiyor");
   const finalDecision = approve ? "approve" : "reject";
   const hash = hashVerdict(checkId, JSON.parse(row.proposal_json), JSON.parse(row.verdict_json), finalDecision);
-  db()
-    .prepare(`UPDATE guard_checks SET status = 'done', final_decision = ?, decided_by = 'insan', verdict_hash = ?, finished_at = ? WHERE id = ?`)
-    .run(finalDecision, hash, Date.now(), checkId);
+  await store().updateCheck(checkId, { status: "done", final_decision: finalDecision, decided_by: "insan", verdict_hash: hash, finished_at: Date.now() });
   emit(checkId, "human", approve ? "İnsan emri onayladı" : "İnsan emri reddetti", { hash });
   await anchorSafely(checkId);
+  await flushEvents(checkId);
 }
 
 export type ChainInfo = ChainStatus;
@@ -285,19 +298,17 @@ async function anchorSafely(checkId: string): Promise<void> {
     emit(checkId, "chain", `Zincir kaydı yapılandırılmadı (Avalanche Fuji): ${st.error ?? ""}`);
     return;
   }
-  const row = db().prepare(`SELECT proposal_json, final_decision, verdict_hash FROM guard_checks WHERE id = ?`).get(checkId) as
-    | { proposal_json: string; final_decision: "approve" | "reject"; verdict_hash: string }
-    | undefined;
+  const row = await store().getCheck(checkId);
   if (!row?.verdict_hash || !row.final_decision) return;
   const p = JSON.parse(row.proposal_json) as OrderProposal;
   emit(checkId, "chain", "Karar Avalanche Fuji'ye yazılıyor…");
   try {
-    const r = await anchorVerdict({ verdictId: checkId.slice(0, 8), hash: row.verdict_hash as `0x${string}`, decision: row.final_decision, subject: `${p.bot} ${p.side} ${p.instId} ${p.notionalUsd}USD` });
-    db().prepare(`UPDATE guard_checks SET chain_tx = ? WHERE id = ?`).run(r.txHash, checkId);
+    const r = await anchorVerdict({ verdictId: checkId.slice(0, 8), hash: row.verdict_hash as `0x${string}`, decision: row.final_decision as "approve" | "reject", subject: `${p.bot} ${p.side} ${p.instId} ${p.notionalUsd}USD` });
+    await store().updateCheck(checkId, { chain_tx: r.txHash });
     emit(checkId, "chain", "Karar Avalanche Fuji'ye yazıldı", r);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    db().prepare(`UPDATE guard_checks SET chain_error = ? WHERE id = ?`).run(msg, checkId);
+    await store().updateCheck(checkId, { chain_error: msg });
     emit(checkId, "chain", `Zincir kaydı başarısız: ${msg.slice(0, 160)}`);
   }
 }
@@ -307,18 +318,19 @@ export class GuardError extends Error {}
 const gRun = globalThis as unknown as { __signalmindGuardRunning?: Map<string, Promise<void>> };
 const running: Map<string, Promise<void>> = (gRun.__signalmindGuardRunning ??= new Map());
 
-export function startCheck(proposal: OrderProposal, scenario: string | null = null): string {
+export async function startCheck(proposal: OrderProposal, scenario: string | null = null): Promise<string> {
   if (!aiConfigured()) throw new GuardError("Yapay zekâ API anahtarı tanımlı değil (GEMINI_API_KEY veya ANTHROPIC_API_KEY).");
   if (running.size >= 2) throw new GuardError("Aynı anda en fazla 2 denetim çalışabilir.");
   const id = randomUUID();
-  db()
-    .prepare(`INSERT INTO guard_checks (id, bot, scenario, proposal_json, status, created_at) VALUES (?, ?, ?, ?, 'running', ?)`)
-    .run(id, proposal.bot, scenario, JSON.stringify(proposal), Date.now());
-  const done = runCheck(id, proposal).catch((e) => {
-    const msg = e instanceof Error ? e.message : String(e);
-    emit(id, "error", msg);
-    db().prepare(`UPDATE guard_checks SET status = 'error', error = ?, finished_at = ? WHERE id = ?`).run(msg, Date.now(), id);
-  });
+  // Stored before the id is returned, so a poll from any instance finds it.
+  await store().insertCheck({ id, bot: proposal.bot, scenario, proposal_json: JSON.stringify(proposal), created_at: Date.now() });
+  const done = runCheck(id, proposal)
+    .catch(async (e) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      emit(id, "error", msg);
+      await store().updateCheck(id, { status: "error", error: msg, finished_at: Date.now() });
+    })
+    .then(() => flushEvents(id));
   running.set(id, done.finally(() => running.delete(id)));
   return id;
 }

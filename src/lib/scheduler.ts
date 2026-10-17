@@ -17,14 +17,34 @@ export function schedulerStatus(): State {
   return { ...state };
 }
 
+const FEED_EVERY_MS = 5 * 60_000;
+let feeding: Promise<void> | null = null;
+
+/**
+ * Pulls every RSS source when the last pull is older than 5 minutes. The background loop calls
+ * it each minute; on serverless hosts (no loop) the news and Guard endpoints call it on demand.
+ * Concurrent callers share one pull.
+ */
+export async function ensureFeeds(): Promise<void> {
+  if (state.lastFeed && Date.now() - state.lastFeed < FEED_EVERY_MS) return;
+  feeding ??= (async () => {
+    state.lastFeed = Date.now();
+    await refreshFeeds();
+  })()
+    .catch((e) => {
+      state.lastError = e instanceof Error ? e.message : String(e);
+    })
+    .finally(() => {
+      feeding = null;
+    });
+  await feeding;
+}
+
 async function tick() {
   try {
     await evaluateDue();
     state.lastEval = Date.now();
-    if (!state.lastFeed || Date.now() - state.lastFeed > 5 * 60_000) {
-      state.lastFeed = Date.now();
-      await refreshFeeds();
-    }
+    await ensureFeeds();
     await recordTurkeyHistory().catch(() => false);
     state.lastAutopilot = { ...autopilotTick(), at: Date.now() };
     state.lastError = undefined;

@@ -27,13 +27,13 @@ test("instructions aimed at the auditor are flagged as injection", () => {
   assert.equal(injectionHits([{ source: "CoinDesk", text: "SEC approves spot ETH ETF options listing" }]).length, 0);
 });
 
-test("policy limits follow the bot's proven tier", () => {
+test("policy limits follow the bot's proven tier", async () => {
   const base = { bot: "T", side: "buy" as const, reason: "", evidence: [] };
-  assert.equal(checkPolicy({ ...base, instId: "BTC-USDT", notionalUsd: 200 }).ok, true);
-  const big = checkPolicy({ ...base, instId: "BTC-USDT", notionalUsd: 3000 });
+  assert.equal((await checkPolicy({ ...base, instId: "BTC-USDT", notionalUsd: 200 })).ok, true);
+  const big = await checkPolicy({ ...base, instId: "BTC-USDT", notionalUsd: 3000 });
   assert.equal(big.ok, false);
   assert.equal(big.withinOrderLimit, false);
-  assert.equal(checkPolicy({ ...base, instId: "PEPE-USDT", notionalUsd: 10 }).assetAllowed, false);
+  assert.equal((await checkPolicy({ ...base, instId: "PEPE-USDT", notionalUsd: 10 })).assetAllowed, false);
 });
 
 const verdict = (over: Partial<Verdict>): Verdict => ({
@@ -51,7 +51,7 @@ const reg = new Map<string, EvidenceRef>([
   ["rss:b", { source: "The Block", kind: "rss" }],
   ["policy", { source: "policy", kind: "policy" }],
 ]);
-const okPolicy = checkPolicy({ bot: "T", side: "buy", instId: "BTC-USDT", notionalUsd: 100, reason: "", evidence: [] });
+const okPolicy = await checkPolicy({ bot: "T", side: "buy", instId: "BTC-USDT", notionalUsd: 100, reason: "", evidence: [] });
 
 test("an approval backed by two independent outlets stands", () => {
   const v = applyGuardrails(verdict({}), reg, okPolicy, 0);
@@ -73,8 +73,8 @@ test("an unverified rationale is rejected even when the model escalates (no evid
   assert.equal(v.human_question, "");
 });
 
-test("an over-limit order with an unverified rationale is rejected, not escalated", () => {
-  const big = checkPolicy({ bot: "T", side: "buy", instId: "BTC-USDT", notionalUsd: 3000, reason: "", evidence: [] });
+test("an over-limit order with an unverified rationale is rejected, not escalated", async () => {
+  const big = await checkPolicy({ bot: "T", side: "buy", instId: "BTC-USDT", notionalUsd: 3000, reason: "", evidence: [] });
   const unverified = [{ claim: "X", status: "unverified" as const, independent_sources: 0, evidence_ids: [], note: "" }];
   assert.equal(applyGuardrails(verdict({ claims: unverified }), reg, big, 0).decision, "reject");
 });
@@ -85,8 +85,8 @@ test("detected injection forces a rejection whatever the model said", () => {
   assert.equal(v.injection_detected, true);
 });
 
-test("over-limit approval becomes a human decision", () => {
-  const big = checkPolicy({ bot: "T", side: "buy", instId: "BTC-USDT", notionalUsd: 3000, reason: "", evidence: [] });
+test("over-limit approval becomes a human decision", async () => {
+  const big = await checkPolicy({ bot: "T", side: "buy", instId: "BTC-USDT", notionalUsd: 3000, reason: "", evidence: [] });
   const v = applyGuardrails(verdict({}), reg, big, 0);
   assert.equal(v.decision, "escalate");
   assert.ok(v.human_question.length > 0);

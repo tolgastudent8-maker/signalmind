@@ -158,7 +158,8 @@ export function db(): DatabaseSync {
     g.__signalmindMigrations = SCHEMA_KEY;
   }
   if (!g.__signalmindDb) {
-    const file = process.env.SIGNALMIND_DB ?? path.join(process.cwd(), "data", "signalmind.db");
+    // Serverless hosts only allow writes under /tmp (per instance; Guard state goes to Redis there).
+    const file = process.env.SIGNALMIND_DB ?? (process.env.VERCEL ? "/tmp/signalmind.db" : path.join(process.cwd(), "data", "signalmind.db"));
     if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true });
     const conn = new DatabaseSync(file);
     conn.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");

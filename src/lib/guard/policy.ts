@@ -1,4 +1,4 @@
-import { db, kvGet, kvSet } from "../db.ts";
+import { store } from "./store.ts";
 import type { OrderProposal } from "./types.ts";
 
 /**
@@ -34,19 +34,23 @@ function startOfToday(): number {
 const epochKey = (bot: string) => `guard_trust_since:${bot}`;
 
 /** Audits created before this time no longer count toward the bot's trust (demo reset). */
-export function trustSince(bot: string): number {
-  return kvGet<number>(epochKey(bot)) ?? 0;
+export async function trustSince(bot: string): Promise<number> {
+  return (await store().kvGet<number>(epochKey(bot))) ?? 0;
 }
 
 /** Restarts the bot's earned trust from "Yeni" without deleting any audit record. */
-export function resetTrust(bot: string): void {
-  kvSet(epochKey(bot), Date.now());
+export async function resetTrust(bot: string): Promise<void> {
+  await store().kvSet(epochKey(bot), Date.now());
 }
 
-export function trustOf(bot: string): Trust {
-  const rows = db()
-    .prepare(`SELECT final_decision, proposal_json, finished_at FROM guard_checks WHERE bot = ? AND final_decision IS NOT NULL AND created_at >= ?`)
-    .all(bot, trustSince(bot)) as { final_decision: "approve" | "reject"; proposal_json: string; finished_at: number | null }[];
+export async function trustOf(bot: string): Promise<Trust> {
+  const since = await trustSince(bot);
+  const rows = (await store().checksOf(bot)).filter((r) => r.final_decision !== null && r.created_at >= since);
+  return trustFrom(bot, rows);
+}
+
+/** Pure: a bot's tier from its decided audits. */
+export function trustFrom(bot: string, rows: { final_decision: string | null; proposal_json: string; finished_at: number | null }[]): Trust {
   const approved = rows.filter((r) => r.final_decision === "approve");
   const today = startOfToday();
   const approvedTodayUsd = approved
@@ -67,9 +71,13 @@ export type PolicyResult = {
   trust: Trust;
 };
 
-export function checkPolicy(p: OrderProposal): PolicyResult {
+export async function checkPolicy(p: OrderProposal): Promise<PolicyResult> {
+  return evaluatePolicy(p, await trustOf(p.bot));
+}
+
+/** Pure: the policy verdict for an order given the bot's trust. */
+export function evaluatePolicy(p: OrderProposal, trust: Trust): PolicyResult {
   const asset = p.instId.split("-")[0].toUpperCase();
-  const trust = trustOf(p.bot);
   const assetAllowed = ALLOWED_ASSETS.includes(asset);
   const withinOrderLimit = p.notionalUsd <= trust.tier.maxOrderUsd;
   const withinDailyLimit = trust.approvedTodayUsd + p.notionalUsd <= trust.tier.dailyUsd;
