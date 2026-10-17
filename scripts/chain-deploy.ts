@@ -7,12 +7,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import solc from "solc";
-import { createWalletClient, formatEther, http, parseEventLogs, type Hex } from "viem";
+import { createWalletClient, formatEther, parseEventLogs, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { avalancheFuji } from "viem/chains";
 import { loadEnv, setEnv } from "./chain-env.ts";
 import {
-  chainStatus, publicClient, rpcUrl, identityRegistryAbi, signalMindRegistryAbi,
+  chainStatus, publicClient, transport, identityRegistryAbi, signalMindRegistryAbi,
   IDENTITY_REGISTRY, EXPLORER_BASE, FAUCET_URL,
 } from "../src/lib/chain.ts";
 
@@ -24,7 +24,7 @@ if (!st.agentAddress) {
 }
 const account = privateKeyToAccount(process.env.CHAIN_PRIVATE_KEY!.trim().replace(/^(?!0x)/, "0x") as Hex);
 const pub = publicClient();
-const wallet = createWalletClient({ account, chain: avalancheFuji, transport: http(rpcUrl()) });
+const wallet = createWalletClient({ account, chain: avalancheFuji, transport: transport() });
 const link = (kind: "address" | "tx", v: string) => `${EXPLORER_BASE}/${kind}/${v}`;
 
 const balance = await pub.getBalance({ address: account.address });

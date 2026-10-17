@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Badge, Card, Empty, usePoll, timeAgo } from "@/components/ui";
-import { DecisionBadge, ProposalCard, Timeline, VerdictPanel, type GuardEvent } from "@/components/guard";
+import { DecisionBadge, ProposalCard, Timeline, VerdictHeadline, VerdictPanel, type GuardEvent } from "@/components/guard";
 import type { CheckRow } from "@/lib/guard/queries";
 import type { Trust } from "@/lib/guard/policy";
 import type { ChainInfo } from "@/lib/guard/agent";
@@ -185,6 +185,9 @@ export default function GuardConsole() {
             </Card>
           ) : (
             <>
+              {check.verdict && check.status !== "error" && (
+                <VerdictHeadline check={check} maxOrderUsd={o?.trust.tier.maxOrderUsd} explorerBase={chain?.explorerBase} />
+              )}
               <Card title="Emir önerisi" action={<DecisionBadge decision={check.final_decision ?? check.decision} />}>
                 <ProposalCard check={check} />
               </Card>

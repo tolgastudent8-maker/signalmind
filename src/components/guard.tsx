@@ -171,6 +171,108 @@ export function Timeline({ events, running }: { events: GuardEvent[]; running: b
   );
 }
 
+type Tone = "up" | "down" | "judge" | "neutral";
+const TONE_TEXT: Record<Tone, string> = { up: "text-up", down: "text-down", judge: "text-judge", neutral: "text-ink-100" };
+const TONE_PANEL: Record<Tone, string> = {
+  up: "from-up/15 ring-up/40",
+  down: "from-down/15 ring-down/40",
+  judge: "from-judge/15 ring-judge/40",
+  neutral: "from-ink-800 ring-ink-700",
+};
+
+/**
+ * One-line headline derived by code from the final verdict (no extra model call),
+ * so the strongest reason is readable at a glance. Reasons are listed by severity.
+ */
+export function verdictHeadline(check: CheckRow, maxOrderUsd?: number): string {
+  const v = check.verdict;
+  if (!v) return "";
+  const decision = check.final_decision ?? v.decision;
+  const status = (name: string) => v.checks.find((c) => c.name === name)?.status;
+  const verified = v.claims.filter((c) => c.status === "verified");
+  const bestSources = Math.max(0, ...verified.map((c) => c.independent_sources));
+  const usd = (n: number) => `${n.toLocaleString("tr-TR")} $`;
+  const notional = check.proposal.notionalUsd;
+
+  if (decision === "approve") {
+    return `Haber ${bestSources} bağımsız kaynakta doğrulandı · limit içinde · manipülasyon yok`;
+  }
+  const reasons: string[] = [];
+  if (v.injection_detected) reasons.push("Kanıtta denetçiye gizli talimat yakalandı");
+  if (status("kaynak_bagimsizligi") === "fail") reasons.push("“Kaynaklar” birbirinin kopyası");
+  if (status("politika_limiti") === "fail" || status("politika_limiti") === "warn")
+    reasons.push(maxOrderUsd && notional > maxOrderUsd ? `Emir yetkinin ${Math.round(notional / maxOrderUsd)} katı (${usd(notional)} > ${usd(maxOrderUsd)})` : "Emir botun yetki limitinin dışında");
+  if (v.claims.some((c) => c.status === "contradicted")) reasons.push("Botun iddiası çürütüldü");
+  if (verified.length === 0 && v.claims.length > 0) reasons.push("Bağımsız teyit yok");
+  if (reasons.length === 0) reasons.push(decision === "escalate" ? "Karar insana bırakıldı" : "Gerekçe yetersiz");
+  return reasons.slice(0, 2).join(" · ");
+}
+
+function Stat({ label, value, sub, tone = "neutral" }: { label: string; value: ReactNode; sub?: string; tone?: Tone }) {
+  return (
+    <div className="rounded-lg bg-ink-950/40 px-3 py-2 ring-1 ring-ink-700/70">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">{label}</div>
+      <div className={`num mt-0.5 text-lg font-semibold ${TONE_TEXT[tone]}`}>{value}</div>
+      {sub && <div className="truncate text-[10.5px] text-ink-500">{sub}</div>}
+    </div>
+  );
+}
+
+export function VerdictHeadline({ check, maxOrderUsd, explorerBase }: { check: CheckRow; maxOrderUsd?: number; explorerBase?: string }) {
+  const v = check.verdict;
+  if (!v) return null;
+  const decision = check.final_decision ?? v.decision;
+  const awaiting = check.status === "awaiting_human";
+  const d = DECISION[decision] ?? { label: decision, tone: "neutral" as Tone, icon: "·" };
+  const verified = v.claims.filter((c) => c.status === "verified");
+  const bestSources = Math.max(0, ...verified.map((c) => c.independent_sources));
+  const policy = v.checks.find((c) => c.name === "politika_limiti")?.status;
+  const overLimit = policy === "fail" || policy === "warn";
+  const seconds = check.finished_at ? Math.max(1, Math.round((check.finished_at - check.created_at) / 1000)) : null;
+  const atkCalls = v.evidence ? Object.keys(v.evidence).filter((k) => k.startsWith("atk:")).length : 0;
+
+  return (
+    <div className={`rounded-2xl bg-gradient-to-br to-transparent p-5 ring-1 ring-inset ${TONE_PANEL[d.tone]}`}>
+      <div className="flex flex-wrap items-center gap-3">
+        <span className={`font-display text-3xl font-bold tracking-tight sm:text-4xl ${TONE_TEXT[d.tone]}`}>
+          {d.icon} {awaiting ? "İNSAN ONAYI BEKLENİYOR" : d.label}
+        </span>
+        <span className="num text-[12px] text-ink-400">
+          {check.proposal.side === "buy" ? "ALIM" : "SATIM"} {check.proposal.instId} · {check.proposal.notionalUsd.toLocaleString("tr-TR")} $
+          {seconds !== null && ` · ${seconds} sn`}
+          {v.toolCalls !== undefined && ` · ${v.toolCalls} araç çağrısı`}
+        </span>
+      </div>
+      <p className="mt-2 font-display text-xl font-semibold leading-snug text-white sm:text-2xl">{verdictHeadline(check, maxOrderUsd)}</p>
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <Stat label="Bağımsız teyit" value={bestSources} sub="onay için en az 2" tone={bestSources >= 2 ? "up" : "down"} />
+        <Stat label="İddialar" value={`${verified.length}/${v.claims.length}`} sub="doğrulandı" tone={v.claims.length > 0 && verified.length === v.claims.length ? "up" : verified.length === 0 ? "down" : "judge"} />
+        <Stat label="Manipülasyon" value={v.injection_detected ? "VAR" : "yok"} sub={v.injection_detected ? "talimat uygulanmadı" : "kanıt metinleri temiz"} tone={v.injection_detected ? "down" : "up"} />
+        <Stat label="Yetki limiti" value={overLimit ? "aşıldı" : "içinde"} sub="emir ve günlük limit" tone={overLimit ? "down" : "up"} />
+        <Stat
+          label="Zincir kaydı"
+          value={
+            check.chain_tx ? (
+              <a href={`${explorerBase ?? "https://testnet.snowtrace.io"}/tx/${check.chain_tx}`} target="_blank" rel="noreferrer" className="text-atk hover:underline">
+                ⛓ Fuji ↗
+              </a>
+            ) : awaiting ? (
+              "bekliyor"
+            ) : check.chain_error ? (
+              "—"
+            ) : (
+              "yazılıyor…"
+            )
+          }
+          sub={check.chain_tx ? "ERC-8004 kimliğiyle" : awaiting ? "insan kararından sonra" : (check.chain_error ?? "Avalanche Fuji")}
+          tone={check.chain_tx ? "neutral" : "judge"}
+        />
+      </div>
+      {atkCalls > 0 && <div className="mt-2 text-[11px] text-ink-400">OKX Agent Trade Kit haber modülünden {atkCalls} kayıt kanıt olarak incelendi.</div>}
+    </div>
+  );
+}
+
 export function VerdictPanel({ check, footer }: { check: CheckRow; footer?: ReactNode }) {
   const v = check.verdict;
   if (!v) return null;

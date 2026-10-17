@@ -21,21 +21,30 @@ const NAMES: Record<string, RegExp> = {
 // The demo bot only buys, so it picks stories whose headline reads as positive; a bot buying
 // on bad news would (rightly) be rejected for a different reason than the scenario shows.
 const POSITIVE = /\b(inflows?|approv\w*|record|surge\w*|soar\w*|rall\w*|launch\w*|partner\w*|adopt\w*|gain\w*|jump\w*|climb\w*|bull\w*|giriş|onay\w*|rekor|yüksel\w*)\b/i;
-const NEGATIVE = /\b(outflows?|los[se]\w*|drop\w*|fall\w*|plung\w*|hack\w*|exploit\w*|lawsuit|sue\w*|ban\w*|crash\w*|bear\w*|çıkış|düş\w*|kayb\w*)\b/i;
+// Note: "bans?|banned" rather than ban\w*, which would also reject every "Bank" headline.
+const NEGATIVE = /\b(outflows?|los[se]\w*|drop\w*|fall\w*|plung\w*|hack\w*|exploit\w*|lawsuit|sue\w*|bans?|banned|crash\w*|bear\w*|postpon\w*|delay\w*|cancel\w*|çıkış|düş\w*|kayb\w*|ertel\w*|iptal\w*|yasak\w*)\b/i;
 
-/** The most corroborated recent positive story about one of the assets, if any. */
+// Opinion / analysis pieces are not corroborable facts; a Guard rightly refuses to "verify" them.
+const OPINION = /\?|\b(analyst\w*|analysis|says?|could|might|may|predict\w*|expect\w*|signals?|analist\w*|uyar\w*|söylüyor|yorum\w*|sinyal\w*|tahmin\w*)\b/i;
+
+const outlets = (s: StoryRow) => new Set(s.sources.map((x) => x.source)).size;
+
+/**
+ * The most widely reported recent positive, factual story about one of the assets, if any.
+ * The returned story keeps a single asset-naming source first: the bot cites only that one,
+ * so the Guard has to find the other outlets itself (that is the independent corroboration).
+ */
 function corroboratedStory(prefer: string[]): { asset: string; story: StoryRow } | null {
-  const recent = listNews(200).filter(
-    (s) => s.sources.length >= 2 && Date.now() - (s.published_at ?? s.fetched_at) < 48 * 3_600_000 && POSITIVE.test(s.title) && !NEGATIVE.test(s.title),
+  const recent = listNews(300).filter(
+    (s) => outlets(s) >= 2 && Date.now() - (s.published_at ?? s.fetched_at) < 48 * 3_600_000 && POSITIVE.test(s.title) && !NEGATIVE.test(s.title) && !OPINION.test(s.title),
   );
   for (const asset of prefer) {
-    // Story clustering is keyword-based and can glue unrelated headlines together: keep only
-    // sources that name the asset, and require two distinct outlets among them.
     const candidates = recent
-      .map((s) => ({ ...s, sources: s.sources.filter((x) => NAMES[asset].test(x.title)) }))
-      .filter((s) => new Set(s.sources.map((x) => x.source)).size >= 2)
-      .sort((a, b) => b.sources.length - a.sources.length);
-    if (candidates[0]) return { asset, story: candidates[0] };
+      .map((s) => ({ s, cite: s.sources.find((x) => NAMES[asset].test(x.title) && !OPINION.test(x.title) && !NEGATIVE.test(x.title)) }))
+      .filter((c) => c.cite)
+      .sort((a, b) => outlets(b.s) - outlets(a.s));
+    const best = candidates[0];
+    if (best) return { asset, story: { ...best.s, sources: [best.cite!, ...best.s.sources.filter((x) => x.source !== best.cite!.source)] } };
   }
   return null;
 }
@@ -54,8 +63,9 @@ function fallbackStory(): { asset: string; story: StoryRow } {
   return { asset: "BTC", story: { ...story, sources: story.sources.filter((x) => x.source.startsWith("Temsili")) } };
 }
 
+/** The bot cites the single outlet it read; corroboration is the Guard's job. */
 function fromStory(s: StoryRow) {
-  return s.sources.slice(0, 3).map((x) => ({ source: x.source, text: x.title, url: x.url, published_at: s.published_at }));
+  return s.sources.slice(0, 1).map((x) => ({ source: x.source, text: x.title, url: x.url, published_at: s.published_at }));
 }
 
 export type Scenario = { id: string; title: string; expectation: string; build: () => OrderProposal };
@@ -85,10 +95,10 @@ export const SCENARIOS: Scenario[] = [
   {
     id: "verified",
     title: "Doğrulanmış haberle alım",
-    expectation: "Birden çok bağımsız yayın organında geçen güncel haber, limit içinde",
+    expectation: "Bot tek kaynak gösterir; Guard haberi başka bağımsız yayınlarda da bulur, limit içinde",
     build: () => {
       const { asset, story } = corroboratedStory(["BTC", "ETH", "SOL", "XRP", "AVAX"]) ?? fallbackStory();
-      return { bot: DEMO_BOT, side: "buy", instId: `${asset}-USDT`, notionalUsd: 150, reason: `Haber: "${story.title}" — birden çok kaynakta.`, evidence: fromStory(story) };
+      return { bot: DEMO_BOT, side: "buy", instId: `${asset}-USDT`, notionalUsd: 150, reason: `${story.sources[0].source} haberi: "${story.sources[0].title}" — olumlu gelişme, alıyorum.`, evidence: fromStory(story) };
     },
   },
   {
@@ -97,7 +107,7 @@ export const SCENARIOS: Scenario[] = [
     expectation: "Gerekçe sağlam olsa bile bot yetkisinin üstünde → insan onayı",
     build: () => {
       const { asset, story } = corroboratedStory(["ETH", "BTC", "SOL", "XRP", "AVAX"]) ?? fallbackStory();
-      return { bot: DEMO_BOT, side: "buy", instId: `${asset}-USDT`, notionalUsd: 3000, reason: `Haber: "${story.title}" — pozisyonu büyütüyorum.`, evidence: fromStory(story) };
+      return { bot: DEMO_BOT, side: "buy", instId: `${asset}-USDT`, notionalUsd: 3000, reason: `${story.sources[0].source} haberi: "${story.sources[0].title}" — pozisyonu büyütüyorum.`, evidence: fromStory(story) };
     },
   },
 ];

@@ -2,7 +2,7 @@
  * Avalanche Fuji katmanı: Guard ajanının ERC-8004 kimliği ve karar (verdict) kayıtları.
  * Kimlik: resmi ERC-8004 IdentityRegistry (Fuji). Kararlar: contracts/SignalMindRegistry.sol.
  */
-import { createPublicClient, createWalletClient, http, keccak256, toBytes, type Hex } from "viem";
+import { createPublicClient, createWalletClient, fallback, http, keccak256, toBytes, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { avalancheFuji } from "viem/chains";
 
@@ -21,6 +21,8 @@ export const FAUCET_URL = "https://core.app/tools/testnet-faucet/?subnet=c&token
 /** Official ERC-8004 IdentityRegistry, same vanity address on every testnet (incl. Fuji). */
 export const IDENTITY_REGISTRY = "0x8004A818BFB912233c491871b3d84c89A494BD9e" as const;
 const TIMEOUT_MS = 30_000;
+/** recordVerdict uses ~60–90k gas (160-char subject); generous fixed cap instead of RPC estimation. */
+const RECORD_GAS = 250_000n;
 const DECISIONS = { approve: 0, reject: 1, escalate: 2 } as const;
 
 export const identityRegistryAbi = [
@@ -63,6 +65,14 @@ export const signalMindRegistryAbi = [
     type: "function", name: "identityRegistry", stateMutability: "view",
     inputs: [], outputs: [{ name: "", type: "address" }],
   },
+  {
+    type: "event", name: "VerdictRecorded",
+    inputs: [
+      { name: "agentId", type: "uint256", indexed: true }, { name: "verdictHash", type: "bytes32", indexed: true },
+      { name: "decision", type: "uint8", indexed: false }, { name: "subject", type: "string", indexed: false },
+      { name: "recorder", type: "address", indexed: true },
+    ],
+  },
   { type: "error", name: "NotAgentOwner", inputs: [] },
   { type: "error", name: "BadDecision", inputs: [] },
   { type: "error", name: "AlreadyRecorded", inputs: [] },
@@ -70,8 +80,16 @@ export const signalMindRegistryAbi = [
 
 export const rpcUrl = () => process.env.CHAIN_RPC_URL || avalancheFuji.rpcUrls.default.http[0];
 
+/** Public Fuji endpoints tried in order; the official one rate-limits bursts (HTTP 429 / Cloudflare 1015). */
+const FALLBACK_RPCS = ["https://avalanche-fuji-c-chain-rpc.publicnode.com", "https://avalanche-fuji.drpc.org"];
+
+export function transport() {
+  const urls = [rpcUrl(), ...FALLBACK_RPCS.filter((u) => u !== rpcUrl())];
+  return fallback(urls.map((u) => http(u, { timeout: 10_000, retryCount: 0 })));
+}
+
 export function publicClient() {
-  return createPublicClient({ chain: avalancheFuji, transport: http(rpcUrl(), { timeout: 15_000 }) });
+  return createPublicClient({ chain: avalancheFuji, transport: transport() });
 }
 
 function normalizeKey(raw: string | undefined): Hex | undefined {
@@ -140,7 +158,7 @@ export async function anchorVerdict(v: {
 
   const account = privateKeyToAccount(normalizeKey(process.env.CHAIN_PRIVATE_KEY)!);
   const pub = publicClient();
-  const wallet = createWalletClient({ account, chain: avalancheFuji, transport: http(rpcUrl(), { timeout: 15_000 }) });
+  const wallet = createWalletClient({ account, chain: avalancheFuji, transport: transport() });
   const deadline = Date.now() + TIMEOUT_MS;
   const left = () => Math.max(1_000, deadline - Date.now());
   // Subject is public on-chain; keep it short and tie it to the off-chain verdict id.
@@ -151,16 +169,20 @@ export async function anchorVerdict(v: {
 
   let txHash: Hex;
   try {
-    txHash = await withTimeout(
-      wallet.writeContract({
+    // Simulate first (eth_call) so contract reverts surface by name, then send with a fixed gas
+    // limit: some public Fuji RPCs return absurd eth_estimateGas values ("exceeds block gas limit").
+    const { request } = await withTimeout(
+      pub.simulateContract({
+        account,
         address: st.registry as Hex,
         abi: signalMindRegistryAbi,
         functionName: "recordVerdict",
         args: [BigInt(st.agentId!), v.hash, decision, subject],
       }),
       left(),
-      "Fuji işlemi gönderilemedi (zaman aşımı).",
+      "Fuji RPC yanıt vermedi (simülasyon zaman aşımı).",
     );
+    txHash = await withTimeout(wallet.writeContract({ ...request, gas: RECORD_GAS }), left(), "Fuji işlemi gönderilemedi (zaman aşımı).");
   } catch (e) {
     const m = e instanceof Error ? e.message : String(e);
     if (/insufficient funds/i.test(m)) throw new Error(`Ajan cüzdanında gas için yeterli test AVAX yok (${account.address}). Faucet: ${FAUCET_URL}`);
@@ -171,7 +193,7 @@ export async function anchorVerdict(v: {
 
   const explorerUrl = `${EXPLORER_BASE}/tx/${txHash}`;
   const receipt = await pub
-    .waitForTransactionReceipt({ hash: txHash, timeout: left(), pollingInterval: 1_000 })
+    .waitForTransactionReceipt({ hash: txHash, timeout: left(), pollingInterval: 1_500 })
     .catch(() => {
       throw new Error(`İşlem gönderildi ama 30 sn içinde onaylanmadı: ${explorerUrl}`);
     });
