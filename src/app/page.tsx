@@ -136,8 +136,9 @@ function CustomOrder({ bot, assets, disabled, busy, onSubmit }: { bot: string; a
   const field = "w-full rounded-lg bg-ink-900 px-2.5 py-1.5 text-[13px] text-ink-100 ring-1 ring-ink-700 outline-none focus:ring-signal/50";
   if (!open)
     return (
-      <button onClick={() => setOpen(true)} disabled={disabled} className="mt-2 w-full rounded-lg border border-dashed border-ink-600 px-3 py-2.5 text-left text-[13px] text-ink-300 hover:border-signal/50 hover:text-ink-100 disabled:opacity-50">
-        ✎ Kendi emrini yaz <span className="text-ink-500">— jüri de deneyebilir</span>
+      <button onClick={() => setOpen(true)} disabled={disabled} className="mt-3 w-full rounded-lg bg-signal/10 px-3 py-3 text-left ring-1 ring-signal/50 transition hover:bg-signal/20 disabled:opacity-50">
+        <div className="text-[14px] font-semibold text-signal">✎ Kendi emrini yaz</div>
+        <div className="mt-0.5 text-[11.5px] text-ink-300">Hazır senaryo değil: istediğin coin, tutar ve iddiayı yaz, Guard canlı haberlerle denetlesin</div>
       </button>
     );
   return (
