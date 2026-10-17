@@ -35,8 +35,8 @@ Trading ajanı (MomentumBot) ──emir önerisi──► SignalMind Guard
                                    Kod bariyerleri (modelin üstünde)
                                    • uydurma kanıt kimliği → atılır, iddia "doğrulanamadı"
                                    • injection bulunduysa → RET (model ne derse desin)
-                                   • limit aşımı → en fazla İNSAN ONAYI
-                                   • 2 bağımsız dış kaynak yoksa → onay verilemez
+                                   • 2 bağımsız dış kaynakla doğrulanmadıysa → RET (kanıt yoksa emir yok)
+                                   • doğrulanmış ama limit aşımı → İNSAN ONAYI
                                                │
                          ┌─────────────────────┼─────────────────────┐
                        ONAY                   RET              İNSAN ONAYI
