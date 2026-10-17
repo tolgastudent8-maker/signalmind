@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { candles, midOf, orderbook, tickers, universe } from "@/lib/market.ts";
 import { LIQUID_TRY_VOL, tokenPremium } from "@/lib/turkey.ts";
-import { allPredictions, computeStats } from "@/lib/scorecard.ts";
+import { okxCoinNews, tokenStories } from "@/lib/token-news.ts";
 import { atr, bollinger, bookStats, depthCurve, ema, last, macd, rsi } from "@/lib/indicators.ts";
 
 export const runtime = "nodejs";
@@ -18,10 +18,11 @@ export async function GET(req: Request, ctx: { params: Promise<{ symbol: string 
   const token = uni.find((u) => u.symbol === symbol);
   if (!token) return NextResponse.json({ error: "Token OKX TR evreninde değil" }, { status: 404 });
 
-  const [series, book, all] = await Promise.all([
+  const [series, book, all, okxNews] = await Promise.all([
     candles(token.instId, bar, BARS[bar]),
     orderbook(token.instId, 400).catch(() => null),
     tickers(),
+    okxCoinNews(symbol),
   ]);
   const closes = series.map((c) => c.c);
   const bb = bollinger(closes);
@@ -32,7 +33,6 @@ export async function GET(req: Request, ctx: { params: Promise<{ symbol: string 
   const tryT = all.get(`${symbol}-TRY`);
   const usdtTry = all.get("USDT-TRY");
   const prem = tryT && t && usdtTry ? tokenPremium(tryT, t, midOf(usdtTry)) : null;
-  const preds = allPredictions({ token: symbol });
 
   return NextResponse.json({
     token,
@@ -63,7 +63,6 @@ export async function GET(req: Request, ctx: { params: Promise<{ symbol: string 
           curve: depthCurve(book.bids, book.asks),
         }
       : null,
-    predictions: preds,
-    stats: computeStats(preds),
+    news: { archive: tokenStories(symbol), okx: okxNews },
   });
 }

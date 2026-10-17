@@ -4,7 +4,8 @@ import Link from "next/link";
 import { use, useState } from "react";
 import { BookLadder, DepthChart, TechChart, type Indicators } from "@/components/tech-chart";
 import { fmtPrem } from "@/components/turkey-card";
-import { Card, Empty, Pct, fmtPrice, timeAgo, usePoll } from "@/components/ui";
+import { Badge, Card, Empty, Pct, fmtPrice, timeAgo, usePoll } from "@/components/ui";
+import type { OkxNewsItem, TokenStory } from "@/lib/token-news";
 import type { Candle, UniverseToken } from "@/lib/market";
 import type { BookStats, DepthPoint } from "@/lib/indicators";
 
@@ -37,7 +38,104 @@ type Data = {
     stats: BookStats | null;
     curve: { bids: DepthPoint[]; asks: DepthPoint[] } | null;
   } | null;
+  news: { archive: TokenStory[]; okx: { items: OkxNewsItem[]; error?: string } };
 };
+
+const SENTIMENT: Record<string, { label: string; tone: "up" | "down" | "neutral" }> = {
+  bullish: { label: "olumlu", tone: "up" },
+  bearish: { label: "olumsuz", tone: "down" },
+  neutral: { label: "nötr", tone: "neutral" },
+};
+
+/** Archive stories about the token (corroborated first) and live OKX ATK news for it. */
+function TokenNews({ symbol, news }: { symbol: string; news: Data["news"] }) {
+  const verified = news.archive.filter((s) => s.corroborated);
+  const single = news.archive.filter((s) => !s.corroborated);
+  return (
+    <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+      <Card title={`${symbol} · doğrulanmış haberler`} action={<span className="text-[11px] text-ink-500">≥2 bağımsız yayın · son 72 saat</span>}>
+        {verified.length === 0 ? (
+          <Empty>Son 72 saatte {symbol} hakkında birden çok yayında geçen haber yok.</Empty>
+        ) : (
+          <ul className="space-y-3">
+            {verified.map((s) => (
+              <li key={s.id} className="rounded-xl bg-ink-900/60 p-3.5 ring-1 ring-ink-800">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone="up">✓ {s.outlets} yayın</Badge>
+                  <span className="num text-[11px] text-ink-500">{timeAgo(s.publishedAt)}</span>
+                </div>
+                <p className="mt-1.5 text-[13.5px] text-ink-100">{s.title}</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {s.sources.map((x, i) =>
+                    x.url ? (
+                      <a key={i} href={x.url} target="_blank" rel="noreferrer" title={x.title} className="rounded bg-ink-800 px-1.5 py-0.5 text-[11px] text-ink-300 hover:text-ink-100">
+                        {x.source} ↗
+                      </a>
+                    ) : (
+                      <span key={i} title={x.title} className="rounded bg-ink-800 px-1.5 py-0.5 text-[11px] text-ink-300">
+                        {x.source}
+                      </span>
+                    ),
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {single.length > 0 && (
+          <details className="mt-3">
+            <summary className="cursor-pointer text-[12px] text-ink-400 hover:text-ink-200">Tek kaynaklı haberler ({single.length}) · doğrulanmış sayılmaz</summary>
+            <ul className="mt-2 space-y-1.5">
+              {single.map((s) => (
+                <li key={s.id} className="flex gap-2 text-[12.5px]">
+                  <span className="num w-16 shrink-0 text-[11px] text-ink-500">{timeAgo(s.publishedAt)}</span>
+                  {s.sources[0]?.url ? (
+                    <a href={s.sources[0].url} target="_blank" rel="noreferrer" className="text-ink-300 hover:text-ink-100">
+                      {s.title} <span className="text-ink-500">· {s.sources[0].source}</span>
+                    </a>
+                  ) : (
+                    <span className="text-ink-300">
+                      {s.title} <span className="text-ink-500">· {s.sources[0]?.source}</span>
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </Card>
+
+      <Card title={`${symbol} · OKX ATK haberleri`} action={<Badge tone="atk">canlı · news_get_by_coin</Badge>}>
+        {news.okx.items.length === 0 ? (
+          <Empty>{news.okx.error ? `OKX haber modülüne ulaşılamadı: ${news.okx.error}` : `OKX'te ${symbol} için haber yok.`}</Empty>
+        ) : (
+          <ul className="space-y-3">
+            {news.okx.items.map((n) => {
+              const s = n.sentiment ? SENTIMENT[n.sentiment] : undefined;
+              return (
+                <li key={n.id} className="rounded-xl bg-ink-900/60 p-3.5 ring-1 ring-ink-800">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {s && <Badge tone={s.tone}>{s.label}</Badge>}
+                    {n.importance === "high" && <Badge tone="judge">önemli</Badge>}
+                    <span className="num text-[11px] text-ink-500">{timeAgo(n.publishedAt)}</span>
+                  </div>
+                  {n.url ? (
+                    <a href={n.url} target="_blank" rel="noreferrer" className="mt-1.5 block text-[13.5px] text-ink-100 hover:underline">
+                      {n.title}
+                    </a>
+                  ) : (
+                    <p className="mt-1.5 text-[13.5px] text-ink-100">{n.title}</p>
+                  )}
+                  {n.summary && <p className="mt-1 line-clamp-2 text-[12px] text-ink-400">{n.summary}</p>}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Card>
+    </div>
+  );
+}
 
 const BARS = [
   { id: "15m", label: "15dk" },
@@ -212,6 +310,8 @@ export default function TokenPage({ params }: { params: Promise<{ symbol: string
           )}
         </div>
       </div>
+
+      <TokenNews symbol={token.symbol} news={data.news} />
 
       <p className="text-[11px] text-ink-500">Göstergeler betimleyicidir: OKX TR mumlarından kodla hesaplanır, yatırım tavsiyesi değildir.</p>
     </div>
