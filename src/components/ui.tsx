@@ -1,35 +1,36 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { DIR_LABEL, STATUS_LABEL } from "@/lib/labels";
 
 export function usePoll<T>(url: string | null, intervalMs = 0): { data: T | null; error: string | null; reload: () => void } {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
-  const alive = useRef(true);
   useEffect(() => {
-    alive.current = true;
     if (!url) return;
+    // Per-effect flag: a shared ref would be re-armed by the next effect, letting the previous
+    // poll loop (old url / interval) resume and keep overwriting `data` forever.
+    let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const load = async () => {
       try {
         const res = await fetch(url, { cache: "no-store" });
         const body = await res.json();
-        if (!alive.current) return;
+        if (cancelled) return;
         if (!res.ok) setError(body.error ?? `HTTP ${res.status}`);
         else {
           setData(body as T);
           setError(null);
         }
       } catch (e) {
-        if (alive.current) setError(e instanceof Error ? e.message : String(e));
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       }
-      if (intervalMs > 0 && alive.current) timer = setTimeout(load, intervalMs);
+      if (intervalMs > 0 && !cancelled) timer = setTimeout(load, intervalMs);
     };
     load();
     return () => {
-      alive.current = false;
+      cancelled = true;
       if (timer) clearTimeout(timer);
     };
   }, [url, intervalMs, nonce]);
