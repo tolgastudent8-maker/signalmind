@@ -1,4 +1,6 @@
 import path from "node:path";
+import os from "node:os";
+import { execFileSync } from "node:child_process";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
@@ -9,7 +11,8 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
  * and keeps one connection per module set:
  * - "market": public market data, no API key needed.
  * - "news":   news + sentiment; needs a read-only OKX API key (OKX_API_KEY,
- *             OKX_SECRET_KEY, OKX_PASSPHRASE). Without one every call fails
+ *             OKX_SECRET_KEY, OKX_PASSPHRASE) or an OKX OAuth session
+ *             (`okx-auth login --site tr`). Without either every call fails
  *             with AUTH_MISSING, which the agents see and handle.
  */
 
@@ -27,8 +30,25 @@ function serverEntry(): string {
   return path.join(process.cwd(), "node_modules", "@okx_ai", "okx-trade-mcp", "dist", "index.js");
 }
 
+let oauthCache: { at: number; ok: boolean } | undefined;
+
+/** OKX OAuth session from `okx-auth login --site tr` (the MCP server uses it when no API key is set). */
+function oauthLoggedIn(): boolean {
+  if (oauthCache && Date.now() - oauthCache.at < 60_000) return oauthCache.ok;
+  let ok = false;
+  try {
+    const bin = process.env.OKX_AUTH_BIN ?? path.join(os.homedir(), ".okx", "bin", process.platform === "win32" ? "okx-auth.exe" : "okx-auth");
+    const out = execFileSync(bin, ["status"], { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
+    ok = /Status:\s*logged_in/.test(out);
+  } catch {
+    ok = false;
+  }
+  oauthCache = { at: Date.now(), ok };
+  return ok;
+}
+
 export function atkHasCredentials(): boolean {
-  return Boolean(process.env.OKX_API_KEY && process.env.OKX_SECRET_KEY && process.env.OKX_PASSPHRASE);
+  return Boolean(process.env.OKX_API_KEY && process.env.OKX_SECRET_KEY && process.env.OKX_PASSPHRASE) || oauthLoggedIn();
 }
 
 async function connect(module: AtkModule): Promise<Client> {

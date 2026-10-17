@@ -214,7 +214,9 @@ export function TechChart({
               ["bb", "Bollinger"],
               ["markers", "Tahminler"],
             ] as const
-          ).map(([k, label]) => (
+          )
+            .filter(([k]) => k !== "markers" || markers.length > 0)
+            .map(([k, label]) => (
             <button
               key={k}
               onClick={() => setShow((s) => ({ ...s, [k]: !s[k] }))}
@@ -389,7 +391,7 @@ export function TechChart({
         <span className="flex items-center gap-1.5">
           <span className="h-0.5 w-4 rounded" style={{ background: C.signal }} /> Sinyal
         </span>
-        {show.markers && (
+        {show.markers && markers.length > 0 && (
           <span>
             Tahmin: <span className="text-up">▲</span> yükseliş · <span className="text-down">▼</span> düşüş · ◆ yatay — renk sonucu gösterir (yeşil doğru, kırmızı yanlış, sarı bekliyor)
           </span>

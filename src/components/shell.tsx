@@ -144,7 +144,6 @@ export function Shell({ children }: { children: ReactNode }) {
           <span className="flex items-center gap-1.5">
             <Dot ok={Boolean(s?.atk.connected)} /> veri: {s?.dataSource === "atk" ? "ATK MCP" : s?.dataSource === "rest" ? "OKX REST (yedek)" : "…"}
           </span>
-          <span>puanlama: {s?.scheduler.lastEval ? timeAgo(s.scheduler.lastEval) : "bekleniyor"}</span>
           <span>rss: {s?.scheduler.lastFeed ? timeAgo(s.scheduler.lastFeed) : "bekleniyor"}</span>
           {s?.scheduler.lastError && <span className="text-down">hata: {s.scheduler.lastError.slice(0, 80)}</span>}
           <Link href="/sistem" className="ml-auto text-ink-500 hover:text-ink-200">

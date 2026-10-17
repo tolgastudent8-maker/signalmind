@@ -4,13 +4,12 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { UniverseToken } from "@/lib/market";
 import type { StoryRow } from "@/lib/news";
-import type { AnalysisSummary } from "@/lib/queries";
 
 type Item = { group: string; label: string; hint?: string; href: string; keywords: string };
 
 const PAGES: Item[] = [
-  { group: "Sayfa", label: "Komuta Merkezi", href: "/", keywords: "ana sayfa haber akış komuta" },
-  { group: "Sayfa", label: "Tahmin Karnesi", href: "/karne", keywords: "karne isabet kalibrasyon brier" },
+  { group: "Sayfa", label: "Guard", href: "/", keywords: "ana sayfa guard denetim emir" },
+  { group: "Sayfa", label: "Haber Arşivi", href: "/haberler", keywords: "haber arşiv kanıt kaynak" },
   { group: "Sayfa", label: "Tokenlar", href: "/tokenlar", keywords: "token evren liste" },
   { group: "Sayfa", label: "Sistem durumu", href: "/sistem", keywords: "sistem telemetri atk gecikme mimari" },
 ];
@@ -31,7 +30,7 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
-  const [data, setData] = useState<{ tokens: UniverseToken[]; news: StoryRow[]; analyses: AnalysisSummary[] } | null>(null);
+  const [data, setData] = useState<{ tokens: UniverseToken[]; news: StoryRow[] } | null>(null);
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -59,24 +58,21 @@ export function CommandPalette() {
     Promise.all([
       fetch("/api/universe").then((r) => r.json()),
       fetch("/api/news").then((r) => r.json()),
-      fetch("/api/analyze").then((r) => r.json()),
     ])
-      .then(([u, n, a]) => setData({ tokens: u.tokens ?? [], news: n.news ?? [], analyses: a.analyses ?? [] }))
-      .catch(() => setData({ tokens: [], news: [], analyses: [] }));
+      .then(([u, n]) => setData({ tokens: u.tokens ?? [], news: n.news ?? [] }))
+      .catch(() => setData({ tokens: [], news: [] }));
   }, [open]);
 
   const items = useMemo(() => {
     const all: Item[] = [...PAGES];
     for (const t of data?.tokens ?? [])
       all.push({ group: "Token", label: t.symbol, hint: `${t.change24h >= 0 ? "+" : ""}${(t.change24h * 100).toFixed(2)}%`, href: `/token/${t.symbol}`, keywords: t.symbol.toLowerCase() });
-    for (const a of data?.analyses ?? [])
-      all.push({ group: "Analiz", label: a.headline ?? a.title, hint: a.tokens.join(" "), href: `/analiz/${a.id}`, keywords: `${a.title} ${a.tokens.join(" ")}`.toLowerCase() });
     for (const n of data?.news ?? [])
       all.push({
         group: "Haber",
         label: n.title,
         hint: n.sources.length > 1 ? `${n.sources.length} kaynak` : n.source,
-        href: n.analysis_id ? `/analiz/${n.analysis_id}` : `/?q=${encodeURIComponent(n.title.slice(0, 40))}`,
+        href: "/haberler",
         keywords: `${n.title} ${n.summary}`.toLowerCase(),
       });
     const query = q.trim().toLowerCase();
@@ -133,7 +129,7 @@ export function CommandPalette() {
                 setSel((s) => Math.max(0, s - 1));
               } else if (e.key === "Enter" && items[sel]) go(items[sel]);
             }}
-            placeholder="Token, haber, analiz veya sayfa ara…"
+            placeholder="Token, haber veya sayfa ara…"
             className="h-12 flex-1 bg-transparent text-sm outline-none placeholder:text-ink-500"
             aria-activedescendant={items[sel] ? `cp-${sel}` : undefined}
           />

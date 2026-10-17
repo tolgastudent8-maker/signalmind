@@ -1,0 +1,164 @@
+{
+  "contractName": "SignalMindRegistry",
+  "compiler": "0.8.37+commit.f401782d.Emscripten.clang",
+  "settings": {
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    },
+    "evmVersion": "shanghai",
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode.object"
+        ]
+      }
+    }
+  },
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "identityRegistry_",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "inputs": [],
+      "name": "AlreadyRecorded",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "BadDecision",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NotAgentOwner",
+      "type": "error"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "agentId",
+          "type": "uint256"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "verdictHash",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "decision",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "subject",
+          "type": "string"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "recorder",
+          "type": "address"
+        }
+      ],
+      "name": "VerdictRecorded",
+      "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "identityRegistry",
+      "outputs": [
+        {
+          "internalType": "contract IERC8004Identity",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "agentId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "verdictHash",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint8",
+          "name": "decision",
+          "type": "uint8"
+        },
+        {
+          "internalType": "string",
+          "name": "subject",
+          "type": "string"
+        }
+      ],
+      "name": "recordVerdict",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "name": "recordedAt",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "name": "verdictCount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x60a0604052348015600e575f5ffd5b50604051610459380380610459833981016040819052602b91603b565b6001600160a01b03166080526066565b5f60208284031215604a575f5ffd5b81516001600160a01b0381168114605f575f5ffd5b9392505050565b6080516103d56100845f395f81816085015261010f01526103d55ff3fe608060405234801561000f575f5ffd5b506004361061004a575f3560e01c8063073c04af1461004e578063134e18f414610080578063bad3dd84146100bf578063bc23adb7146100d4575b5f5ffd5b61006d61005c366004610270565b60016020525f908152604090205481565b6040519081526020015b60405180910390f35b6100a77f000000000000000000000000000000000000000000000000000000000000000081565b6040516001600160a01b039091168152602001610077565b6100d26100cd366004610287565b6100f3565b005b61006d6100e2366004610270565b5f6020819052908152604090205481565b604051636caf395f60e11b8152336004820152602481018690527f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03169063d95e72be90604401602060405180830381865afa15801561015c573d5f5f3e3d5ffd5b505050506040513d601f19601f82011682018060405250810190610180919061031c565b61019d57604051630e41dcbf60e21b815260040160405180910390fd5b600260ff841611156101c25760405163e6e46ed960e01b815260040160405180910390fd5b5f84815260208190526040902054156101ee5760405163081da57f60e11b815260040160405180910390fd5b5f84815260208181526040808320429055878352600191829052822080549192909161021b908490610342565b92505081905550336001600160a01b031684867fbd29950a0e4833381d0dd89aba591da6f2834e19e92f789a300a5d9e3091242c86868660405161026193929190610367565b60405180910390a45050505050565b5f60208284031215610280575f5ffd5b5035919050565b5f5f5f5f5f6080868803121561029b575f5ffd5b8535945060208601359350604086013560ff811681146102b9575f5ffd5b9250606086013567ffffffffffffffff8111156102d4575f5ffd5b8601601f810188136102e4575f5ffd5b803567ffffffffffffffff8111156102fa575f5ffd5b88602082840101111561030b575f5ffd5b959894975092955050506020019190565b5f6020828403121561032c575f5ffd5b8151801515811461033b575f5ffd5b9392505050565b8082018082111561036157634e487b7160e01b5f52601160045260245ffd5b92915050565b60ff8416815260406020820152816040820152818360608301375f818301606090810191909152601f909201601f191601019291505056fea26469706673582212201f73bc61c63bc88273e0649111059270695d499d3057b24f36346870b1a43bda64736f6c63430008250033"
+}

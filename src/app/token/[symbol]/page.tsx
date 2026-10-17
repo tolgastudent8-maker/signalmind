@@ -4,10 +4,9 @@ import Link from "next/link";
 import { use, useState } from "react";
 import { BookLadder, DepthChart, TechChart, type Indicators } from "@/components/tech-chart";
 import { fmtPrem } from "@/components/turkey-card";
-import { Card, ConfidenceBar, DirPill, Empty, Pct, StatusPill, fmtPrice, fmtTime, timeAgo, usePoll } from "@/components/ui";
+import { Card, Empty, Pct, fmtPrice, timeAgo, usePoll } from "@/components/ui";
 import type { Candle, UniverseToken } from "@/lib/market";
 import type { BookStats, DepthPoint } from "@/lib/indicators";
-import type { PredictionRow, Stats } from "@/lib/scorecard";
 
 type Readout = {
   rsi: number | null;
@@ -38,8 +37,6 @@ type Data = {
     stats: BookStats | null;
     curve: { bids: DepthPoint[]; asks: DepthPoint[] } | null;
   } | null;
-  predictions: PredictionRow[];
-  stats: Stats;
 };
 
 const BARS = [
@@ -48,7 +45,6 @@ const BARS = [
   { id: "4H", label: "4s" },
 ] as const;
 
-const pct = (x: number | null | undefined) => (x === null || x === undefined ? "—" : `%${Math.round(x * 100)}`);
 const usd = (v: number) => (v >= 1e9 ? `$${(v / 1e9).toFixed(2)}B` : v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${(v / 1e3).toFixed(0)}k`);
 
 type Signal = { label: string; value: string; read: string; tone: "up" | "down" | "flat" };
@@ -105,7 +101,7 @@ export default function TokenPage({ params }: { params: Promise<{ symbol: string
 
   if (error) return <Empty>{error}</Empty>;
   if (!data) return <div className="shimmer h-[640px] rounded-2xl bg-ink-850" />;
-  const { token, candles, indicators, readout, book, predictions, stats, ticker } = data;
+  const { token, candles, indicators, readout, book, ticker } = data;
   const sig = signals(readout, token.last);
   const bs = book?.stats ?? null;
 
@@ -170,7 +166,7 @@ export default function TokenPage({ params }: { params: Promise<{ symbol: string
               candles={candles}
               ind={indicators}
               bar={bar}
-              markers={predictions.map((p) => ({ ts: p.entry_ts, price: p.entry_price, dir: p.direction, status: p.status, horizon: p.horizon_h }))}
+              markers={[]}
             />
           </div>
         </Card>
@@ -216,56 +212,6 @@ export default function TokenPage({ params }: { params: Promise<{ symbol: string
           )}
         </div>
       </div>
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <div className="card px-4 py-3">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">Tahmin</div>
-          <div className="num mt-1 text-xl">{predictions.length}</div>
-        </div>
-        <div className="card px-4 py-3">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">Bu tokende isabet</div>
-          <div className="num mt-1 text-xl text-signal">{pct(stats.accuracy)}</div>
-          <div className="text-[11px] text-ink-400">
-            {stats.correct}/{stats.n} puanlanmış
-          </div>
-        </div>
-        <div className="card px-4 py-3">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">Bekleyen</div>
-          <div className="num mt-1 text-xl">{stats.pending}</div>
-        </div>
-        <div className="card px-4 py-3">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500">Momentum kuralı</div>
-          <div className="num mt-1 text-xl">{pct(stats.baselines.momentum)}</div>
-          <div className="text-[11px] text-ink-400">aynı tahminlerde</div>
-        </div>
-      </div>
-
-      <Card title="Bu token için yapılan tahminler — neden?">
-        {predictions.length === 0 ? (
-          <Empty>Henüz bu token için tahmin yok.</Empty>
-        ) : (
-          <ul className="space-y-3">
-            {predictions.map((p) => (
-              <li key={p.id} className="rounded-xl bg-ink-900/60 p-4 ring-1 ring-ink-800">
-                <div className="flex flex-wrap items-center gap-2">
-                  <DirPill dir={p.direction} />
-                  <span className="num text-xs text-ink-300">{p.horizon_h} saat</span>
-                  <ConfidenceBar value={p.confidence} />
-                  <StatusPill status={p.status} />
-                  {p.change_pct !== null && <Pct value={p.change_pct} className="text-xs" />}
-                  {p.mode === "backtest" && <span className="text-[11px] text-judge">geriye dönük</span>}
-                  <Link href={`/analiz/${p.analysis_id}`} className="ml-auto text-xs text-ink-400 hover:text-ink-100">
-                    {fmtTime(p.entry_ts)} · analizi aç →
-                  </Link>
-                </div>
-                <p className="mt-2 text-[13px] text-ink-200">{p.mechanism}</p>
-                <p className="mt-1 text-xs text-ink-400">{p.rationale}</p>
-                {p.rule_note && <p className="mt-1.5 text-xs text-judge">⚙ {p.rule_note}</p>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
 
       <p className="text-[11px] text-ink-500">Göstergeler betimleyicidir: OKX TR mumlarından kodla hesaplanır, yatırım tavsiyesi değildir.</p>
     </div>

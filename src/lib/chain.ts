@@ -63,6 +63,9 @@ export const signalMindRegistryAbi = [
     type: "function", name: "identityRegistry", stateMutability: "view",
     inputs: [], outputs: [{ name: "", type: "address" }],
   },
+  { type: "error", name: "NotAgentOwner", inputs: [] },
+  { type: "error", name: "BadDecision", inputs: [] },
+  { type: "error", name: "AlreadyRecorded", inputs: [] },
 ] as const;
 
 export const rpcUrl = () => process.env.CHAIN_RPC_URL || avalancheFuji.rpcUrls.default.http[0];
