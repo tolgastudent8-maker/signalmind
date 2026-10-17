@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge, Card, Empty, usePoll, timeAgo } from "@/components/ui";
 import type { StoryRow } from "@/lib/news";
 import type { UniverseToken } from "@/lib/market";
@@ -23,6 +23,15 @@ export default function NewsArchive() {
   const [refreshing, setRefreshing] = useState(false);
   const [q, setQ] = useState("");
   const uniData = usePoll<{ tokens: UniverseToken[] }>("/api/universe", 0);
+  // The server pulls every RSS source every 5 minutes (scheduler); show when, and when next.
+  const status = usePoll<{ scheduler: { lastFeed?: number } }>("/api/status", 30000);
+  const lastFeed = status.data?.scheduler.lastFeed;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const nextIn = lastFeed ? Math.max(0, lastFeed + 5 * 60_000 + 60_000 - now) : null; // tick runs each minute
   const uni = useMemo(() => new Set((uniData.data?.tokens ?? []).map((t) => t.symbol)), [uniData.data]);
 
   async function refresh() {
@@ -43,6 +52,12 @@ export default function NewsArchive() {
         <p className="mt-2 text-[14px] text-ink-300">
           Guard bir botun gerekçesini doğrularken bu arşivde ve OKX Agent Trade Kit haber modülünde arar. Aynı olayı aktaran yayınlar tek olayda toplanır; bir iddia ancak birbirinden bağımsız en az iki yayın organında geçiyorsa
           doğrulanmış sayılır.
+        </p>
+        <p className="num mt-2 flex items-center gap-2 text-[12px] text-ink-400">
+          <span className="pulse-ring h-1.5 w-1.5 rounded-full bg-up" />
+          18 kaynak 5 dakikada bir otomatik yenilenir
+          {lastFeed && <> · son güncelleme {timeAgo(lastFeed)}</>}
+          {nextIn !== null && <> · sonraki ≈ {nextIn > 0 ? `${Math.floor(nextIn / 60000)}:${String(Math.floor((nextIn % 60000) / 1000)).padStart(2, "0")}` : "şimdi"}</>}
         </p>
       </div>
       <Card
