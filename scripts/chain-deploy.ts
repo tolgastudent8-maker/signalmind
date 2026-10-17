@@ -154,7 +154,7 @@ if (agentId !== undefined) {
 console.log(`
 Fuji hazır:
   Ajan cüzdanı       ${link("address", account.address)}
-  ERC-8004 kimliği   agentId ${agentId}  →  ${EXPLORER_BASE}/nft/${IDENTITY_REGISTRY}/${agentId}
+  ERC-8004 kimliği   agentId ${agentId}  (IdentityRegistry token #${agentId})
   IdentityRegistry   ${link("address", IDENTITY_REGISTRY)}
   SignalMindRegistry ${link("address", registry)}
 .env.local güncellendi (CHAIN_REGISTRY, CHAIN_AGENT_ID). Next sunucusunu yeniden başlatın.`);

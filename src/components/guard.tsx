@@ -129,7 +129,9 @@ export function Timeline({ events, running }: { events: GuardEvent[]; running: b
   return (
     <ol className="relative space-y-2.5">
       {visible.map((e) => {
-        const p = e.payload as { ok?: boolean; ms?: number; input?: unknown; preview?: string; steps?: string[]; summary?: string; question?: string; explorerUrl?: string } | null;
+        const p = e.payload as { ok?: boolean; ms?: number; input?: unknown; preview?: string; steps?: string[]; summary?: string; question?: string; explorerUrl?: string; txHash?: string } | null;
+        // Older events stored Snowtrace links; rebuild from the hash so every link uses the current explorer.
+        if (p?.txHash) p.explorerUrl = `https://testnet.avascan.info/blockchain/c/tx/${p.txHash}`;
         const isTool = e.kind === "tool";
         return (
           <li key={e.id} className="rise flex gap-3">
@@ -253,7 +255,7 @@ export function VerdictHeadline({ check, maxOrderUsd, explorerBase }: { check: C
           label="Zincir kaydı"
           value={
             check.chain_tx ? (
-              <a href={`${explorerBase ?? "https://testnet.snowtrace.io"}/tx/${check.chain_tx}`} target="_blank" rel="noreferrer" className="text-atk hover:underline">
+              <a href={`${explorerBase ?? "https://testnet.avascan.info/blockchain/c"}/tx/${check.chain_tx}`} target="_blank" rel="noreferrer" className="text-atk hover:underline">
                 ⛓ Fuji ↗
               </a>
             ) : awaiting ? (

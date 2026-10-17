@@ -87,11 +87,14 @@ export default function GuardConsole() {
     overview.reload();
   }
 
+  // Two-step inline confirmation: window.confirm() is silently suppressed in embedded browsers.
+  const [confirmReset, setConfirmReset] = useState(false);
   async function reset() {
-    if (!window.confirm("Yerel denetim geçmişi silinsin mi? Botun yetki seviyesi sıfırlanır; zincirdeki kayıtlar kalır.")) return;
+    setConfirmReset(false);
+    setError(null);
     const res = await fetch("/api/guard", { method: "DELETE" });
     const b = await res.json();
-    if (!res.ok) setError(b.error ?? "Sıfırlanamadı");
+    if (!res.ok) return setError(b.error ?? "Sıfırlanamadı");
     setSelected(null);
     overview.reload();
   }
@@ -168,9 +171,21 @@ export default function GuardConsole() {
             <Card
               title="Kanıtla büyüyen yetki"
               action={
-                <button onClick={reset} disabled={busy !== null || live} className="text-[11px] text-ink-400 hover:text-ink-100 disabled:opacity-40" title="Yerel denetim geçmişini siler; zincir kayıtları kalır">
-                  demoyu sıfırla
-                </button>
+                confirmReset ? (
+                  <span className="flex items-center gap-2 text-[11px]">
+                    <span className="text-ink-300">Geçmiş silinsin mi? (zincir kayıtları kalır)</span>
+                    <button onClick={reset} className="rounded px-1.5 py-0.5 font-medium text-down ring-1 ring-down/40 hover:bg-down/10">
+                      evet, sıfırla
+                    </button>
+                    <button onClick={() => setConfirmReset(false)} className="text-ink-400 hover:text-ink-100">
+                      vazgeç
+                    </button>
+                  </span>
+                ) : (
+                  <button onClick={() => setConfirmReset(true)} disabled={busy !== null || live} className="text-[11px] text-ink-400 hover:text-ink-100 disabled:opacity-40" title="Yerel denetim geçmişini siler; zincir kayıtları kalır">
+                    demoyu sıfırla
+                  </button>
+                )
               }
             >
               <TrustLadder trust={o.trust} tiers={o.tiers} />
@@ -224,7 +239,7 @@ export default function GuardConsole() {
                               <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-400">Karar kaydı</div>
                               <div className="num mt-1 break-all text-[11px] text-ink-300">hash {check.verdict_hash}</div>
                               {check.chain_tx ? (
-                                <a href={`${chain?.explorerBase ?? "https://testnet.snowtrace.io"}/tx/${check.chain_tx}`} target="_blank" rel="noreferrer" className="num mt-1 block break-all text-[11px] text-atk hover:underline">
+                                <a href={`${chain?.explorerBase ?? "https://testnet.avascan.info/blockchain/c"}/tx/${check.chain_tx}`} target="_blank" rel="noreferrer" className="num mt-1 block break-all text-[11px] text-atk hover:underline">
                                   Avalanche Fuji tx {check.chain_tx} ↗
                                 </a>
                               ) : (

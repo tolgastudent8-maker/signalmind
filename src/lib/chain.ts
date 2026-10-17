@@ -16,7 +16,8 @@ export type ChainStatus = {
   error?: string;
 };
 
-export const EXPLORER_BASE = "https://testnet.snowtrace.io";
+/** Avascan (Fuji): `${EXPLORER_BASE}/tx/<hash>`, `/address/<addr>`. Snowtrace sits behind a Cloudflare challenge. */
+export const EXPLORER_BASE = "https://testnet.avascan.info/blockchain/c";
 export const FAUCET_URL = "https://core.app/tools/testnet-faucet/?subnet=c&token=c";
 /** Official ERC-8004 IdentityRegistry, same vanity address on every testnet (incl. Fuji). */
 export const IDENTITY_REGISTRY = "0x8004A818BFB912233c491871b3d84c89A494BD9e" as const;
