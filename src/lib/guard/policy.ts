@@ -1,4 +1,4 @@
-import { db } from "../db.ts";
+import { db, kvGet, kvSet } from "../db.ts";
 import type { OrderProposal } from "./types.ts";
 
 /**
@@ -31,10 +31,22 @@ function startOfToday(): number {
   return d.getTime();
 }
 
+const epochKey = (bot: string) => `guard_trust_since:${bot}`;
+
+/** Audits created before this time no longer count toward the bot's trust (demo reset). */
+export function trustSince(bot: string): number {
+  return kvGet<number>(epochKey(bot)) ?? 0;
+}
+
+/** Restarts the bot's earned trust from "Yeni" without deleting any audit record. */
+export function resetTrust(bot: string): void {
+  kvSet(epochKey(bot), Date.now());
+}
+
 export function trustOf(bot: string): Trust {
   const rows = db()
-    .prepare(`SELECT final_decision, proposal_json, finished_at FROM guard_checks WHERE bot = ? AND final_decision IS NOT NULL`)
-    .all(bot) as { final_decision: "approve" | "reject"; proposal_json: string; finished_at: number | null }[];
+    .prepare(`SELECT final_decision, proposal_json, finished_at FROM guard_checks WHERE bot = ? AND final_decision IS NOT NULL AND created_at >= ?`)
+    .all(bot, trustSince(bot)) as { final_decision: "approve" | "reject"; proposal_json: string; finished_at: number | null }[];
   const approved = rows.filter((r) => r.final_decision === "approve");
   const today = startOfToday();
   const approvedTodayUsd = approved

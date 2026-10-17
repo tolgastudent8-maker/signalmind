@@ -15,7 +15,7 @@ export async function GET() {
 export async function DELETE() {
   const n = resetGuardHistory();
   if (n < 0) return NextResponse.json({ error: "Çalışan bir denetim var; bitince tekrar deneyin." }, { status: 409 });
-  return NextResponse.json({ deleted: n });
+  return NextResponse.json({ kept: n });
 }
 
 /** Start an audit: either a demo scenario id or a full order proposal from a trading agent. */

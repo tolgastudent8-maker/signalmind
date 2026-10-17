@@ -1,5 +1,5 @@
 import { db } from "../db.ts";
-import { ALLOWED_ASSETS, TIERS, trustOf } from "./policy.ts";
+import { ALLOWED_ASSETS, TIERS, resetTrust, trustOf, trustSince } from "./policy.ts";
 import { DEMO_BOT, SCENARIOS } from "./scenarios.ts";
 import type { FinalVerdict, OrderProposal } from "./types.ts";
 import { chainInfo, waitForCheck, type EvidenceRef } from "./agent.ts";
@@ -54,6 +54,7 @@ export function guardOverview() {
   return {
     bot: DEMO_BOT,
     trust: trustOf(DEMO_BOT),
+    trustSince: trustSince(DEMO_BOT),
     tiers: TIERS,
     allowedAssets: ALLOWED_ASSETS,
     scenarios: SCENARIOS.map(({ id, title, expectation }) => ({ id, title, expectation })),
@@ -62,12 +63,15 @@ export function guardOverview() {
   };
 }
 
-/** Demo reset: clears local audit history (and with it the bot's earned tier). On-chain records stay. */
+/**
+ * Demo reset: the bot's earned tier starts again from "Yeni". Audit history (and its Fuji
+ * records) is kept; earlier audits are shown as "önceki demo" and no longer count as trust.
+ */
 export function resetGuardHistory(): number {
   const running = gRun.__signalmindGuardRunning ?? new Map();
   if (running.size) return -1;
-  db().exec(`DELETE FROM guard_events; `);
-  return Number(db().prepare(`DELETE FROM guard_checks`).run().changes);
+  resetTrust(DEMO_BOT);
+  return Number((db().prepare(`SELECT COUNT(*) AS n FROM guard_checks WHERE bot = ?`).get(DEMO_BOT) as { n: number }).n);
 }
 
 export { waitForCheck };

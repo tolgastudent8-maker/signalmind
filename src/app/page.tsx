@@ -10,6 +10,7 @@ import type { ChainInfo } from "@/lib/guard/agent";
 type Overview = {
   bot: string;
   trust: Trust;
+  trustSince: number;
   tiers: { tier: number; name: string; maxOrderUsd: number; dailyUsd: number; needApproved: number }[];
   allowedAssets: string[];
   scenarios: { id: string; title: string; expectation: string }[];
@@ -95,7 +96,6 @@ export default function GuardConsole() {
     const res = await fetch("/api/guard", { method: "DELETE" });
     const b = await res.json();
     if (!res.ok) return setError(b.error ?? "Sıfırlanamadı");
-    setSelected(null);
     overview.reload();
   }
 
@@ -173,7 +173,7 @@ export default function GuardConsole() {
               action={
                 confirmReset ? (
                   <span className="flex items-center gap-2 text-[11px]">
-                    <span className="text-ink-300">Geçmiş silinsin mi? (zincir kayıtları kalır)</span>
+                    <span className="text-ink-300">Bot &quot;Yeni&quot; seviyesine dönsün mü? (geçmiş kalır)</span>
                     <button onClick={reset} className="rounded px-1.5 py-0.5 font-medium text-down ring-1 ring-down/40 hover:bg-down/10">
                       evet, sıfırla
                     </button>
@@ -182,7 +182,7 @@ export default function GuardConsole() {
                     </button>
                   </span>
                 ) : (
-                  <button onClick={() => setConfirmReset(true)} disabled={busy !== null || live} className="text-[11px] text-ink-400 hover:text-ink-100 disabled:opacity-40" title="Yerel denetim geçmişini siler; zincir kayıtları kalır">
+                  <button onClick={() => setConfirmReset(true)} disabled={busy !== null || live} className="text-[11px] text-ink-400 hover:text-ink-100 disabled:opacity-40" title="Botun yetki seviyesini sıfırlar; denetim geçmişi ve zincir kayıtları kalır">
                     demoyu sıfırla
                   </button>
                 )
@@ -270,6 +270,7 @@ export default function GuardConsole() {
                     <span className="ml-auto flex items-center gap-2">
                       {c.status === "running" ? <Badge tone="signal">çalışıyor</Badge> : c.status === "error" ? <Badge tone="down">hata</Badge> : <DecisionBadge decision={c.final_decision ?? c.decision} />}
                       {c.decided_by === "insan" && <Badge tone="judge">insan</Badge>}
+                      {o && c.created_at < o.trustSince && <Badge>önceki demo</Badge>}
                       {c.chain_tx && <Badge tone="atk">⛓ Fuji</Badge>}
                     </span>
                   </button>
