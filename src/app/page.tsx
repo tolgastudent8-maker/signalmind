@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState, type CSSProperties } from "react";
+
+const delay = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
 import { Badge, Card, Empty, usePoll, timeAgo } from "@/components/ui";
 import { DecisionBadge, ProposalCard, Timeline, VerdictHeadline, VerdictPanel, type GuardEvent } from "@/components/guard";
 import type { CheckRow } from "@/lib/guard/queries";
@@ -18,10 +20,10 @@ type Overview = {
   layers: { chain: ChainInfo | null; atkNewsCredentials: boolean; ai: { label: string; model: string; configured: boolean } };
 };
 
-function Layer({ name, value, ok, hint }: { name: string; value: string; ok: boolean | "warn"; hint: string }) {
+function Layer({ name, value, ok, hint, d = 0 }: { name: string; value: string; ok: boolean | "warn"; hint: string; d?: number }) {
   const dot = ok === true ? "bg-up" : ok === "warn" ? "bg-judge" : "bg-ink-500";
   return (
-    <div className="card px-4 py-3" title={hint}>
+    <div className="enter lift card px-4 py-3" title={hint} style={delay(d)}>
       <div className="flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-ink-400">
         <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
         {name}
@@ -40,7 +42,7 @@ function TrustLadder({ trust, tiers }: { trust: Trust; tiers: Overview["tiers"] 
         const reached = t.tier <= trust.tier.tier;
         return (
           <div key={t.tier} className={`flex items-center gap-3 rounded-lg px-3 py-2 ring-1 ${active ? "bg-signal/10 ring-signal/40" : "bg-ink-900/50 ring-ink-700"}`}>
-            <span className={`num grid h-6 w-6 place-items-center rounded-full text-[11px] ${reached ? "bg-signal text-ink-950" : "bg-ink-700 text-ink-300"}`}>{t.tier}</span>
+            <span className={`num grid h-6 w-6 place-items-center rounded-full text-[11px] ${reached ? "bg-signal text-ink-950" : "bg-ink-700 text-ink-300"} ${active ? "pulse-ring" : ""}`}>{t.tier}</span>
             <div className="min-w-0 flex-1">
               <div className={`text-[13px] ${active ? "text-signal" : "text-ink-200"}`}>{t.name}</div>
               <div className="num text-[10.5px] text-ink-400">
@@ -51,6 +53,11 @@ function TrustLadder({ trust, tiers }: { trust: Trust; tiers: Overview["tiers"] 
           </div>
         );
       })}
+      {trust.next && (
+        <div className="h-1.5 overflow-hidden rounded-full bg-ink-800" title={`Sonraki seviye: ${trust.next.name}`}>
+          <div className="fill-bar h-full rounded-full bg-signal" style={{ width: `${Math.min(100, (trust.approved / trust.next.needApproved) * 100)}%` }} />
+        </div>
+      )}
       <p className="text-[11.5px] leading-relaxed text-ink-400">
         Yetki yalnızca kanıtlı geçmişle büyür: {trust.approved} onaylı, {trust.rejected} reddedilmiş emir.
         {trust.next ? ` Sonraki seviye için ${trust.next.needApproved - trust.approved} onay daha gerekli.` : " En üst seviye."}
@@ -87,22 +94,29 @@ function VerifyOnChain({ checkId }: { checkId: string }) {
       </button>
     );
   const v = state;
-  const row = (ok: boolean | null | undefined, text: string) => (
-    <li className="flex gap-2">
-      <span className={ok ? "text-up" : ok === false ? "text-down" : "text-ink-500"}>{ok ? "✓" : ok === false ? "✕" : "·"}</span>
+  // Each check lands one after another, as if performed in turn; the verdict line comes last.
+  const STEP = 320;
+  const row = (i: number, ok: boolean | null | undefined, text: string) => (
+    <li className="tick-in flex gap-2" style={{ "--d": `${i * STEP}ms` } as CSSProperties}>
+      <span className={`tick-pop ${ok ? "text-up" : ok === false ? "text-down" : "text-ink-500"}`} style={{ "--d": `${i * STEP + 150}ms` } as CSSProperties}>
+        {ok ? "✓" : ok === false ? "✕" : "·"}
+      </span>
       <span className="text-ink-200">{text}</span>
     </li>
   );
+  const rows: [boolean | null | undefined, string][] = [[v.hashMatches, `Karar kaydı yeniden hash'lendi: ${v.recomputed.slice(0, 18)}… ${v.hashMatches ? "kayıtla aynı" : "kayıtla FARKLI"}`]];
+  if (v.onChain) {
+    rows.push([v.onChain.recorded, v.onChain.recorded ? `Fuji'de kayıtlı · blok #${v.onChain.block ?? "?"} · ${v.onChain.recordedAt ? new Date(v.onChain.recordedAt).toLocaleString("tr-TR") : ""}` : "Bu hash Fuji'de yok"]);
+    if (v.decisionMatches !== undefined) rows.push([v.decisionMatches, `Zincirdeki karar: ${DECISION_TR[v.onChain.decision ?? ""] ?? "—"} (kayıttaki: ${DECISION_TR[v.decision ?? ""] ?? "—"})`]);
+    if (v.agentMatches !== undefined) rows.push([v.agentMatches, `Yazan: ERC-8004 ajan #${v.onChain.agentId ?? "—"}`]);
+  }
+  if (v.error) rows.push([false, v.error]);
   return (
-    <div className={`mt-2 rounded-lg px-3 py-2.5 ring-1 ${v.ok ? "bg-up/5 ring-up/30" : "bg-down/5 ring-down/30"}`}>
-      <div className={`text-[13px] font-semibold ${v.ok ? "text-up" : "text-down"}`}>{v.ok ? "✓ Doğrulandı: kayıt değiştirilmemiş" : "✕ Doğrulanamadı"}</div>
-      <ul className="num mt-1.5 space-y-1 text-[11.5px]">
-        {row(v.hashMatches, `Karar kaydı yeniden hash'lendi: ${v.recomputed.slice(0, 18)}… ${v.hashMatches ? "kayıtla aynı" : "kayıtla FARKLI"}`)}
-        {v.onChain && row(v.onChain.recorded, v.onChain.recorded ? `Fuji'de kayıtlı · blok #${v.onChain.block ?? "?"} · ${v.onChain.recordedAt ? new Date(v.onChain.recordedAt).toLocaleString("tr-TR") : ""}` : "Bu hash Fuji'de yok")}
-        {v.onChain && v.decisionMatches !== undefined && row(v.decisionMatches, `Zincirdeki karar: ${DECISION_TR[v.onChain.decision ?? ""] ?? "—"} (kayıttaki: ${DECISION_TR[v.decision ?? ""] ?? "—"})`)}
-        {v.onChain && v.agentMatches !== undefined && row(v.agentMatches, `Yazan: ERC-8004 ajan #${v.onChain.agentId ?? "—"}`)}
-        {v.error && row(false, v.error)}
-      </ul>
+    <div className={`enter mt-2 rounded-lg px-3 py-2.5 ring-1 ${v.ok ? "bg-up/5 ring-up/30" : "bg-down/5 ring-down/30"}`}>
+      <ul className="num space-y-1 text-[11.5px]">{rows.map(([ok, text], i) => <Fragment key={i}>{row(i, ok, text)}</Fragment>)}</ul>
+      <div className={`stamp mt-2 text-[14px] font-semibold ${v.ok ? "text-up" : "text-down"}`} style={{ "--d": `${rows.length * STEP + 150}ms` } as CSSProperties}>
+        {v.ok ? "✓ Doğrulandı: kayıt değiştirilmemiş" : "✕ Doğrulanamadı"}
+      </div>
     </div>
   );
 }
@@ -228,7 +242,7 @@ export default function GuardConsole() {
 
   return (
     <div className="space-y-6">
-      <section className="flex flex-wrap items-end justify-between gap-4">
+      <section className="enter flex flex-wrap items-end justify-between gap-4">
         <div className="max-w-2xl">
           <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-signal">SignalMind Guard</div>
           <h1 className="mt-1 font-display text-3xl font-semibold leading-tight tracking-tight sm:text-[34px]">Ajanınız işlem yapmadan önce, kanıtını göstersin.</h1>
@@ -242,22 +256,24 @@ export default function GuardConsole() {
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Layer
           name="Kimlik"
+          d={80}
           value={chain?.configured ? `ERC-8004 ajan #${chain.agentId} · Fuji` : "Avalanche Fuji · kurulum bekliyor"}
           ok={chain?.configured ? true : chain?.agentAddress ? "warn" : false}
           hint={chain?.agentAddress ? `cüzdan ${chain.agentAddress.slice(0, 8)}…${chain.agentAddress.slice(-4)}` : "Kararlar yerelde hash'leniyor"}
         />
         <Layer
           name="Araçlar"
+          d={160}
           value="OKX Agent Trade Kit (MCP)"
           ok={o ? (o.layers.atkNewsCredentials ? true : "warn") : false}
           hint={o?.layers.atkNewsCredentials ? "market + news modülleri, salt okunur" : "market açık · news için okuma anahtarı yok → RSS yedeği"}
         />
-        <Layer name="Sınırlar" value={o ? `${o.trust.tier.name} · emir ≤ ${o.trust.tier.maxOrderUsd} $` : "…"} ok={true} hint="Salt okunur · emir göndermez · araç izin listesi" />
-        <Layer name="Model" value={o ? `${o.layers.ai.label} · ${o.layers.ai.model}` : "…"} ok={o?.layers.ai.configured ?? false} hint="Karar sonrası kod kuralları uygulanır" />
+        <Layer name="Sınırlar" value={o ? `${o.trust.tier.name} · emir ≤ ${o.trust.tier.maxOrderUsd} $` : "…"} ok={true} hint="Salt okunur · emir göndermez · araç izin listesi" d={240} />
+        <Layer name="Model" value={o ? `${o.layers.ai.label} · ${o.layers.ai.model}` : "…"} ok={o?.layers.ai.configured ?? false} hint="Karar sonrası kod kuralları uygulanır" d={320} />
       </section>
 
       <div className="grid gap-6 lg:grid-cols-12">
-        <div className="space-y-6 lg:col-span-4">
+        <div className="enter space-y-6 lg:col-span-4" style={delay(380)}>
           <Card title="Trading ajanından emir">
             <p className="mb-3 text-[12.5px] text-ink-300">
               <span className="text-ink-100">{o?.bot ?? "MomentumBot"}</span> okuduğu her habere göre işlem açan basit bir demo bottur. Bir senaryo seçin; emir önce Guard&apos;a gelir.
@@ -268,7 +284,7 @@ export default function GuardConsole() {
                   key={s.id}
                   onClick={() => run(s.id)}
                   disabled={busy !== null}
-                  className="group w-full rounded-lg bg-ink-900/60 px-3 py-2.5 text-left ring-1 ring-ink-700 transition hover:bg-ink-800 hover:ring-signal/40 disabled:opacity-50"
+                  className="lift group w-full rounded-lg bg-ink-900/60 px-3 py-2.5 text-left ring-1 ring-ink-700 transition hover:bg-ink-800 hover:ring-signal/40 disabled:opacity-50"
                 >
                   <div className="flex items-center gap-2 text-[13.5px] text-ink-100">
                     {s.title}
@@ -307,7 +323,7 @@ export default function GuardConsole() {
           )}
         </div>
 
-        <div className="space-y-6 lg:col-span-8">
+        <div className="enter space-y-6 lg:col-span-8" style={delay(460)}>
           {!check ? (
             <Card title="Denetim">
               <Empty>Soldan bir senaryo seçerek ilk denetimi başlatın.</Empty>
@@ -315,14 +331,14 @@ export default function GuardConsole() {
           ) : (
             <>
               {check.verdict && check.status !== "error" && (
-                <VerdictHeadline check={check} maxOrderUsd={o?.trust.tier.maxOrderUsd} explorerBase={chain?.explorerBase} />
+                <VerdictHeadline key={`${check.id}-${check.final_decision ?? check.decision}-${check.status}`} check={check} maxOrderUsd={o?.trust.tier.maxOrderUsd} explorerBase={chain?.explorerBase} />
               )}
               <Card title="Emir önerisi" action={<DecisionBadge decision={check.final_decision ?? check.decision} />}>
                 <ProposalCard check={check} />
               </Card>
               <div className="grid gap-6 xl:grid-cols-5">
                 <Card title="Ajan izi" className="xl:col-span-2" action={live ? <Badge tone="signal">canlı</Badge> : undefined}>
-                  <Timeline events={events} running={live} />
+                  {live && <div className="scanline -mt-1 mb-3" aria-hidden />}
                 </Card>
                 <Card title="Karar" className="xl:col-span-3">
                   {check.status === "error" ? (

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Badge, timeAgo } from "./ui";
 import type { CheckRow } from "@/lib/guard/queries";
 import type { EvidenceRef } from "@/lib/guard/agent";
@@ -210,9 +210,9 @@ export function verdictHeadline(check: CheckRow, maxOrderUsd?: number): string {
   return reasons.slice(0, 2).join(" · ");
 }
 
-function Stat({ label, value, sub, tone = "neutral" }: { label: string; value: ReactNode; sub?: string; tone?: Tone }) {
+function Stat({ label, value, sub, tone = "neutral", delay = 0 }: { label: string; value: ReactNode; sub?: string; tone?: Tone; delay?: number }) {
   return (
-    <div className="rounded-lg bg-ink-950/40 px-3 py-2 ring-1 ring-ink-700/70">
+    <div className="enter rounded-lg bg-ink-950/40 px-3 py-2 ring-1 ring-ink-700/70" style={{ "--d": `${delay}ms` } as CSSProperties}>
       <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">{label}</div>
       <div className={`num mt-0.5 text-lg font-semibold ${TONE_TEXT[tone]}`}>{value}</div>
       {sub && <div className="truncate text-[10.5px] text-ink-500">{sub}</div>}
@@ -234,24 +234,27 @@ export function VerdictHeadline({ check, maxOrderUsd, explorerBase }: { check: C
   const atkCalls = v.evidence ? Object.keys(v.evidence).filter((k) => k.startsWith("atk:")).length : 0;
 
   return (
-    <div className={`rounded-2xl bg-gradient-to-br to-transparent p-5 ring-1 ring-inset ${TONE_PANEL[d.tone]}`}>
+    <div className={`enter sweep rounded-2xl bg-gradient-to-br to-transparent p-5 ring-1 ring-inset ${TONE_PANEL[d.tone]}`}>
       <div className="flex flex-wrap items-center gap-3">
-        <span className={`font-display text-3xl font-bold tracking-tight sm:text-4xl ${TONE_TEXT[d.tone]}`}>
+        <span className={`stamp font-display text-3xl font-bold tracking-tight sm:text-4xl ${TONE_TEXT[d.tone]}`}>
           {d.icon} {awaiting ? "İNSAN ONAYI BEKLENİYOR" : d.label}
         </span>
-        <span className="num text-[12px] text-ink-400">
+        <span className="enter num text-[12px] text-ink-400" style={{ "--d": "250ms" } as CSSProperties}>
           {check.proposal.side === "buy" ? "ALIM" : "SATIM"} {check.proposal.instId} · {check.proposal.notionalUsd.toLocaleString("tr-TR")} $
           {seconds !== null && ` · ${seconds} sn`}
           {v.toolCalls !== undefined && ` · ${v.toolCalls} araç çağrısı`}
         </span>
       </div>
-      <p className="mt-2 font-display text-xl font-semibold leading-snug text-white sm:text-2xl">{verdictHeadline(check, maxOrderUsd)}</p>
+      <p className="enter mt-2 font-display text-xl font-semibold leading-snug text-white sm:text-2xl" style={{ "--d": "380ms" } as CSSProperties}>
+        {verdictHeadline(check, maxOrderUsd)}
+      </p>
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
-        <Stat label="Bağımsız teyit" value={bestSources} sub="onay için en az 2" tone={bestSources >= 2 ? "up" : "down"} />
-        <Stat label="İddialar" value={`${verified.length}/${v.claims.length}`} sub="doğrulandı" tone={v.claims.length > 0 && verified.length === v.claims.length ? "up" : verified.length === 0 ? "down" : "judge"} />
-        <Stat label="Manipülasyon" value={v.injection_detected ? "VAR" : "yok"} sub={v.injection_detected ? "talimat uygulanmadı" : "kanıt metinleri temiz"} tone={v.injection_detected ? "down" : "up"} />
-        <Stat label="Yetki limiti" value={overLimit ? "aşıldı" : "içinde"} sub="emir ve günlük limit" tone={overLimit ? "down" : "up"} />
+        <Stat delay={520} label="Bağımsız teyit" value={bestSources} sub="onay için en az 2" tone={bestSources >= 2 ? "up" : "down"} />
+        <Stat delay={600} label="İddialar" value={`${verified.length}/${v.claims.length}`} sub="doğrulandı" tone={v.claims.length > 0 && verified.length === v.claims.length ? "up" : verified.length === 0 ? "down" : "judge"} />
+        <Stat delay={680} label="Manipülasyon" value={v.injection_detected ? "VAR" : "yok"} sub={v.injection_detected ? "talimat uygulanmadı" : "kanıt metinleri temiz"} tone={v.injection_detected ? "down" : "up"} />
+        <Stat delay={760} label="Yetki limiti" value={overLimit ? "aşıldı" : "içinde"} sub="emir ve günlük limit" tone={overLimit ? "down" : "up"} />
         <Stat
+          delay={840}
           label="Zincir kaydı"
           value={
             check.chain_tx ? (
