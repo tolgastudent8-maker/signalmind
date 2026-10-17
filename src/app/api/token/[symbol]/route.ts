@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { candles, midOf, orderbook, tickers, universe } from "@/lib/market.ts";
 import { LIQUID_TRY_VOL, tokenPremium } from "@/lib/turkey.ts";
 import { okxCoinNews, tokenStories } from "@/lib/token-news.ts";
-import { atr, bollinger, bookStats, depthCurve, ema, last, macd, rsi } from "@/lib/indicators.ts";
+import { atr, bollinger, bookCoverage, bookStats, depthCurve, ema, last, macd, rsi } from "@/lib/indicators.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,7 +60,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ symbol: string 
           levels: { bids: book.bids.length, asks: book.asks.length },
           ts: book.ts,
           stats: bookStats(book.bids, book.asks),
-          curve: depthCurve(book.bids, book.asks),
+          // Chart only the band the fetched levels actually cover (≤ ±2%); a fixed ±2% made every
+          // liquid book a flat block, since 400 levels of BTC/ETH span only a few hundredths of a percent.
+          curve: (() => {
+            const range = Math.min(0.02, Math.max(0.0002, bookCoverage(book.bids, book.asks)));
+            const c = depthCurve(book.bids, book.asks, range);
+            return c ? { ...c, range } : null;
+          })(),
         }
       : null,
     news: { archive: tokenStories(symbol), okx: okxNews },

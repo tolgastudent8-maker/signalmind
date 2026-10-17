@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { use, useState } from "react";
-import { BookLadder, DepthChart, TechChart, type Indicators } from "@/components/tech-chart";
+import { BookLadder, DepthChart, TechChart, fmtBand, type Indicators } from "@/components/tech-chart";
 import { fmtPrem } from "@/components/turkey-card";
 import { Badge, Card, Empty, Pct, fmtPrice, timeAgo, usePoll } from "@/components/ui";
 import type { OkxNewsItem, TokenStory } from "@/lib/token-news";
@@ -36,7 +36,7 @@ type Data = {
     levels: { bids: number; asks: number };
     ts: number;
     stats: BookStats | null;
-    curve: { bids: DepthPoint[]; asks: DepthPoint[] } | null;
+    curve: { bids: DepthPoint[]; asks: DepthPoint[]; range: number } | null;
   } | null;
   news: { archive: TokenStory[]; okx: { items: OkxNewsItem[]; error?: string } };
 };
@@ -274,8 +274,8 @@ export default function TokenPage({ params }: { params: Promise<{ symbol: string
             {book ? <BookLadder bids={book.bids} asks={book.asks} /> : <Empty>Emir defteri alınamadı.</Empty>}
           </Card>
           {book?.curve && bs && (
-            <Card title="Derinlik · ±%2">
-              <DepthChart curve={book.curve} mid={bs.mid} />
+            <Card title={`Derinlik · ±${fmtBand(book.curve.range)}`}>
+              <DepthChart curve={book.curve} mid={bs.mid} range={book.curve.range} />
               <div className="num mt-3 grid grid-cols-3 gap-2 text-[11px]">
                 <span className="text-ink-500">bant</span>
                 <span className="text-right text-up">alış</span>
@@ -283,11 +283,22 @@ export default function TokenPage({ params }: { params: Promise<{ symbol: string
                 {bs.depth.map((d) => (
                   <div key={d.pct} className="contents">
                     <span className="text-ink-400">±%{d.pct * 100}</span>
-                    <span className="text-right text-ink-200">{usd(d.bid)}</span>
-                    <span className="text-right text-ink-200">{usd(d.ask)}</span>
+                    <span className="text-right text-ink-200">
+                      {d.covered ? "" : "≥ "}
+                      {usd(d.bid)}
+                    </span>
+                    <span className="text-right text-ink-200">
+                      {d.covered ? "" : "≥ "}
+                      {usd(d.ask)}
+                    </span>
                   </div>
                 ))}
               </div>
+              {bs.depth.some((d) => !d.covered) && (
+                <p className="mt-1.5 text-[11px] text-ink-500">
+                  İlk {book.levels.bids} kademe fiyatın yalnızca ±{fmtBand(bs.coverage)} yakınını kapsıyor; daha geniş bantlar en az bu kadar derin.
+                </p>
+              )}
               <div className="mt-3">
                 <div className="mb-1 flex justify-between text-[11px]">
                   <span className="text-ink-400">Dengesizlik (±%1)</span>

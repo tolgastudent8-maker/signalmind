@@ -116,8 +116,14 @@ export type BookStats = {
   bestAsk: number;
   mid: number;
   spreadBps: number;
-  /** Quote-currency depth within ±1% and ±2% of mid. */
-  depth: { pct: number; bid: number; ask: number }[];
+  /**
+   * Quote-currency depth within ±1% and ±2% of mid. `covered` is false when the fetched
+   * levels stop short of that band (liquid books: 400 levels can span < 0.05%), so the
+   * figure is a lower bound.
+   */
+  depth: { pct: number; bid: number; ask: number; covered: boolean }[];
+  /** How far from mid (fraction) the fetched levels reach on the thinner side. */
+  coverage: number;
   /** (bid − ask) / (bid + ask) depth within ±1%; >0 means more resting buy interest. */
   imbalance: number;
 };
@@ -143,14 +149,22 @@ export function depthCurve(bids: BookLevel[], asks: BookLevel[], range = 0.02, p
   return { bids: curve(bids, -1), asks: curve(asks, 1) };
 }
 
+/** Fraction of mid that the fetched book reaches on its thinner side. */
+export function bookCoverage(bids: BookLevel[], asks: BookLevel[]): number {
+  if (!bids.length || !asks.length) return 0;
+  const mid = (bids[0].px + asks[0].px) / 2;
+  return Math.min((mid - bids[bids.length - 1].px) / mid, (asks[asks.length - 1].px - mid) / mid);
+}
+
 export function bookStats(bids: BookLevel[], asks: BookLevel[]): BookStats | null {
   if (!bids.length || !asks.length) return null;
   const bestBid = bids[0].px;
   const bestAsk = asks[0].px;
   const mid = (bestBid + bestAsk) / 2;
+  const coverage = bookCoverage(bids, asks);
   const within = (side: BookLevel[], pct: number, dir: 1 | -1) =>
     side.filter((l) => (dir === 1 ? l.px <= mid * (1 + pct) : l.px >= mid * (1 - pct))).reduce((a, l) => a + l.px * l.sz, 0);
-  const depth = [0.01, 0.02].map((pct) => ({ pct, bid: within(bids, pct, -1), ask: within(asks, pct, 1) }));
+  const depth = [0.01, 0.02].map((pct) => ({ pct, bid: within(bids, pct, -1), ask: within(asks, pct, 1), covered: coverage >= pct }));
   const d1 = depth[0];
   return {
     bestBid,
@@ -158,6 +172,7 @@ export function bookStats(bids: BookLevel[], asks: BookLevel[]): BookStats | nul
     mid,
     spreadBps: ((bestAsk - bestBid) / mid) * 10_000,
     depth,
+    coverage,
     imbalance: d1.bid + d1.ask > 0 ? (d1.bid - d1.ask) / (d1.bid + d1.ask) : 0,
   };
 }

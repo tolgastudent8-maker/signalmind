@@ -1,8 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useMemo, useState } from "react";
 import { Badge, Card, Empty, usePoll, timeAgo } from "@/components/ui";
 import type { StoryRow } from "@/lib/news";
+import type { UniverseToken } from "@/lib/market";
+import { tagTokens } from "@/lib/tagging";
+
+/** Coins a story is about: tagged from every outlet's headline, limited to tokens tradable on OKX TR. */
+function storyCoins(s: StoryRow, uni: Set<string>): string[] {
+  const found = new Set<string>();
+  for (const x of s.sources) for (const t of tagTokens(x.title, uni)) found.add(t);
+  return [...found].slice(0, 5);
+}
 
 /**
  * Guard's evidence archive: every story with the outlets that carried it.
@@ -12,6 +22,8 @@ export default function NewsArchive() {
   const news = usePoll<{ news: StoryRow[]; sources: { source: string; lang: "en" | "tr" }[] }>("/api/news", 60000);
   const [refreshing, setRefreshing] = useState(false);
   const [q, setQ] = useState("");
+  const uniData = usePoll<{ tokens: UniverseToken[] }>("/api/universe", 0);
+  const uni = useMemo(() => new Set((uniData.data?.tokens ?? []).map((t) => t.symbol)), [uniData.data]);
 
   async function refresh() {
     setRefreshing(true);
@@ -50,10 +62,21 @@ export default function NewsArchive() {
           <div className="divide-y divide-ink-700">
             {stories.slice(0, 80).map((s) => {
               const outlets = new Set(s.sources.map((x) => x.source)).size;
+              const coins = storyCoins(s, uni);
               return (
                 <div key={s.story_id} className="py-3">
                   <div className="flex flex-wrap items-start gap-2">
                     <span className="min-w-0 flex-1 text-[14px] text-ink-100">{s.title}</span>
+                    {coins.map((c) => (
+                      <Link
+                        key={c}
+                        href={`/token/${c}`}
+                        title={`${c} sayfasını aç`}
+                        className="num rounded-md bg-[#a78bfa]/15 px-1.5 py-0.5 text-[11px] font-semibold text-[#c4b5fd] ring-1 ring-inset ring-[#a78bfa]/40 hover:bg-[#a78bfa]/25"
+                      >
+                        {c}
+                      </Link>
+                    ))}
                     <Badge tone={outlets >= 2 ? "up" : "neutral"}>{outlets} yayın</Badge>
                     <span className="text-[11px] text-ink-400">{timeAgo(s.published_at ?? s.fetched_at)}</span>
                   </div>

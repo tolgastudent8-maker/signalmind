@@ -402,7 +402,13 @@ export function TechChart({
 }
 
 /** Cumulative bid/ask depth to ±2% of mid. */
-export function DepthChart({ curve, mid }: { curve: { bids: { px: number; cum: number }[]; asks: { px: number; cum: number }[] }; mid: number }) {
+/** "%0.02" style label for a fraction, with enough decimals for very tight bands. */
+export function fmtBand(f: number): string {
+  const p = f * 100;
+  return `%${p >= 1 ? p.toFixed(p % 1 ? 1 : 0) : p >= 0.1 ? p.toFixed(2) : p.toFixed(3)}`.replace(".", ",");
+}
+
+export function DepthChart({ curve, mid, range = 0.02 }: { curve: { bids: { px: number; cum: number }[]; asks: { px: number; cum: number }[] }; mid: number; range?: number }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<{ side: "bid" | "ask"; px: number; cum: number } | null>(null);
   const H = 150;
@@ -439,9 +445,9 @@ export function DepthChart({ curve, mid }: { curve: { bids: { px: number; cum: n
           <path d={area(curve.bids)} fill={C.up} fillOpacity={0.18} stroke={C.up} strokeWidth={1.5} />
           <path d={area(curve.asks)} fill={C.down} fillOpacity={0.18} stroke={C.down} strokeWidth={1.5} />
           <line x1={xs(mid)} x2={xs(mid)} y1={4} y2={H - B} stroke="#5b667d" strokeDasharray="3 3" />
-          {[-0.02, -0.01, 0, 0.01, 0.02].map((p) => (
-            <text key={p} x={Math.min(width - 14, Math.max(14, xs(mid * (1 + p))))} y={H - 4} fontSize="10" fill={C.text} textAnchor="middle" className="num">
-              {p === 0 ? "orta" : `${p > 0 ? "+" : ""}${p * 100}%`}
+          {[-1, -0.5, 0, 0.5, 1].map((k) => (
+            <text key={k} x={Math.min(width - 18, Math.max(18, xs(mid * (1 + k * range))))} y={H - 4} fontSize="10" fill={C.text} textAnchor="middle" className="num">
+              {k === 0 ? "orta" : `${k > 0 ? "+" : "−"}${fmtBand(Math.abs(k) * range)}`}
             </text>
           ))}
           {hover && <line x1={xs(hover.px)} x2={xs(hover.px)} y1={4} y2={H - B} stroke="#8a94a8" opacity={0.6} />}
