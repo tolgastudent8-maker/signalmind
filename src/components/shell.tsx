@@ -17,8 +17,8 @@ type Status = {
 };
 
 const NAV = [
-  { href: "/", label: "Komuta Merkezi" },
-  { href: "/karne", label: "Tahmin Karnesi" },
+  { href: "/", label: "Guard" },
+  { href: "/haberler", label: "Haber Arşivi" },
   { href: "/tokenlar", label: "Tokenlar" },
   { href: "/sistem", label: "Sistem" },
 ];
@@ -79,7 +79,7 @@ export function Shell({ children }: { children: ReactNode }) {
               </svg>
             </span>
             <span className="font-display text-[17px] font-semibold tracking-tight">
-              SignalMind <span className="text-signal">AI</span>
+              SignalMind <span className="text-signal">Guard</span>
             </span>
           </Link>
           <nav className="hidden items-center gap-1 md:flex">
@@ -136,7 +136,7 @@ export function Shell({ children }: { children: ReactNode }) {
       )}
       <main className="mx-auto max-w-[1440px] px-4 py-6 pb-14 sm:px-6">{children}</main>
       <footer className="mx-auto max-w-[1440px] px-4 pb-12 pt-2 text-xs text-ink-400 sm:px-6">
-        SignalMind bir karar destek aracıdır; yatırım tavsiyesi değildir ve emir göndermez. Piyasa verisi OKX Agent Trade Kit (salt okunur) üzerinden OKX TR&apos;den alınır.
+        SignalMind Guard trading ajanlarının emirlerini denetler; fiyat tahmini ve yatırım tavsiyesi üretmez, kendisi emir göndermez. Piyasa ve haber verisi OKX Agent Trade Kit (salt okunur) üzerinden OKX TR&apos;den alınır. &quot;Temsili&quot; işaretli demo metinleri gerçek haber değildir.
       </footer>
       <CommandPalette />
       <div className="num fixed inset-x-0 bottom-0 z-30 border-t hairline bg-ink-950/90 backdrop-blur">

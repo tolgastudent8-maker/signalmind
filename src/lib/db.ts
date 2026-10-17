@@ -79,6 +79,33 @@ CREATE TABLE IF NOT EXISTS abstentions (
   UNIQUE (analysis_id, token, horizon_h)
 );
 CREATE INDEX IF NOT EXISTS idx_abstentions_analysis ON abstentions(analysis_id);
+CREATE TABLE IF NOT EXISTS guard_checks (
+  id TEXT PRIMARY KEY,
+  bot TEXT NOT NULL,
+  scenario TEXT,
+  proposal_json TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('running','awaiting_human','done','error')),
+  decision TEXT CHECK (decision IN ('approve','reject','escalate')),
+  final_decision TEXT CHECK (final_decision IN ('approve','reject')),
+  decided_by TEXT,
+  verdict_json TEXT,
+  verdict_hash TEXT,
+  chain_tx TEXT,
+  chain_error TEXT,
+  error TEXT,
+  created_at INTEGER NOT NULL,
+  finished_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_guard_checks_created ON guard_checks(created_at DESC);
+CREATE TABLE IF NOT EXISTS guard_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  check_id TEXT NOT NULL REFERENCES guard_checks(id),
+  ts INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  payload_json TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_guard_events_check ON guard_events(check_id, id);
 CREATE TABLE IF NOT EXISTS tr_premium (
   ts INTEGER PRIMARY KEY,
   usdt_try REAL NOT NULL,

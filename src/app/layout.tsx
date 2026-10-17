@@ -8,8 +8,8 @@ const grotesk = Space_Grotesk({ subsets: ["latin", "latin-ext"], variable: "--fo
 const jetbrains = JetBrains_Mono({ subsets: ["latin", "latin-ext"], variable: "--font-jetbrains" });
 
 export const metadata: Metadata = {
-  title: "SignalMind AI",
-  description: "Kripto haberlerinin OKX TR tokenlarına etkisini çok ajanlı yapay zekâyla analiz eden ve kendi isabetini ölçen platform.",
+  title: "SignalMind Guard",
+  description: "Trading ajanlarının emirlerini borsaya gitmeden önce kanıtla denetleyen, kararlarını Avalanche Fuji'de ERC-8004 kimliğiyle kaydeden ajan.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start --port 3000",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --experimental-strip-types tests/core.test.ts tests/autopilot.test.ts tests/indicators.test.ts tests/features.test.ts",
+    "test": "node --test --experimental-strip-types tests/core.test.ts tests/autopilot.test.ts tests/indicators.test.ts tests/features.test.ts tests/guard.test.ts tests/chain.test.ts",
     "test:e2e": "node --test --experimental-strip-types tests/pipeline.e2e.test.ts",
     "check": "node --experimental-strip-types scripts/check.ts"
   },
@@ -22,6 +22,8 @@
     "react": "19.2.9",
     "react-dom": "19.2.9",
     "recharts": "3.10.1",
+    "solc": "0.8.37",
+    "viem": "2.57.2",
     "zod": "4.3.6"
   },
   "devDependencies": {

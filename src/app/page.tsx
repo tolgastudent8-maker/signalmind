@@ -1,247 +1,247 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { NewsFeed } from "@/components/news-feed";
-import { TurkeyCard } from "@/components/turkey-card";
-import { AutopilotCard } from "@/components/autopilot-card";
-import { Heatmap } from "@/components/market";
-import { ImpactMatrix } from "@/components/impact-matrix";
-import { Badge, Card, Empty, Stat, usePoll, timeAgo, DirPill } from "@/components/ui";
-import { EVENT_LABEL, WINNER_LABEL } from "@/lib/labels";
-import type { FeedResult, StoryRow } from "@/lib/news";
-import type { AnalysisSummary } from "@/lib/queries";
-import type { Stats } from "@/lib/scorecard";
+import { useEffect, useState } from "react";
+import { Badge, Card, Empty, usePoll, timeAgo } from "@/components/ui";
+import { DecisionBadge, ProposalCard, Timeline, VerdictPanel, type GuardEvent } from "@/components/guard";
+import type { CheckRow } from "@/lib/guard/queries";
+import type { Trust } from "@/lib/guard/policy";
+import type { ChainInfo } from "@/lib/guard/agent";
 
-type NewsRow = StoryRow;
+type Overview = {
+  bot: string;
+  trust: Trust;
+  tiers: { tier: number; name: string; maxOrderUsd: number; dailyUsd: number; needApproved: number }[];
+  allowedAssets: string[];
+  scenarios: { id: string; title: string; expectation: string }[];
+  checks: CheckRow[];
+  layers: { chain: ChainInfo | null; atkNewsCredentials: boolean; ai: { label: string; model: string; configured: boolean } };
+};
 
-const pct = (x: number | null | undefined) => (x === null || x === undefined ? "—" : `%${Math.round(x * 100)}`);
+function Layer({ name, value, ok, hint }: { name: string; value: string; ok: boolean | "warn"; hint: string }) {
+  const dot = ok === true ? "bg-up" : ok === "warn" ? "bg-judge" : "bg-ink-500";
+  return (
+    <div className="card px-4 py-3" title={hint}>
+      <div className="flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-ink-400">
+        <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+        {name}
+      </div>
+      <div className="mt-1 truncate text-[13px] text-ink-100">{value}</div>
+      <div className="mt-0.5 truncate text-[11px] text-ink-400">{hint}</div>
+    </div>
+  );
+}
 
-export default function Home() {
-  const router = useRouter();
-  const [refreshing, setRefreshing] = useState(false);
+function TrustLadder({ trust, tiers }: { trust: Trust; tiers: Overview["tiers"] }) {
+  return (
+    <div className="space-y-2">
+      {tiers.map((t) => {
+        const active = t.tier === trust.tier.tier;
+        const reached = t.tier <= trust.tier.tier;
+        return (
+          <div key={t.tier} className={`flex items-center gap-3 rounded-lg px-3 py-2 ring-1 ${active ? "bg-signal/10 ring-signal/40" : "bg-ink-900/50 ring-ink-700"}`}>
+            <span className={`num grid h-6 w-6 place-items-center rounded-full text-[11px] ${reached ? "bg-signal text-ink-950" : "bg-ink-700 text-ink-300"}`}>{t.tier}</span>
+            <div className="min-w-0 flex-1">
+              <div className={`text-[13px] ${active ? "text-signal" : "text-ink-200"}`}>{t.name}</div>
+              <div className="num text-[10.5px] text-ink-400">
+                emir ≤ {t.maxOrderUsd.toLocaleString("tr-TR")} $ · gün ≤ {t.dailyUsd.toLocaleString("tr-TR")} $
+              </div>
+            </div>
+            <span className="num text-[10.5px] text-ink-400">{t.needApproved} onay</span>
+          </div>
+        );
+      })}
+      <p className="text-[11.5px] leading-relaxed text-ink-400">
+        Yetki yalnızca kanıtlı geçmişle büyür: {trust.approved} onaylı, {trust.rejected} reddedilmiş emir.
+        {trust.next ? ` Sonraki seviye için ${trust.next.needApproved - trust.approved} onay daha gerekli.` : " En üst seviye."}
+      </p>
+    </div>
+  );
+}
+
+export default function GuardConsole() {
+  const overview = usePoll<Overview>("/api/guard", 5000);
+  const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [filter, setFilter] = useState("");
+  const [answering, setAnswering] = useState(false);
 
+  const checks = overview.data?.checks ?? [];
   useEffect(() => {
-    const onFilter = (e: Event) => setFilter(String((e as CustomEvent).detail ?? ""));
-    window.addEventListener("signalmind:filter", onFilter);
-    return () => window.removeEventListener("signalmind:filter", onFilter);
-  }, []);
+    if (!selected && checks[0]) setSelected(checks[0].id);
+  }, [selected, checks]);
 
-  const news = usePoll<{ news: NewsRow[]; sources: { source: string; lang: "en" | "tr" }[] }>("/api/news", 60000);
-  const uni = usePoll<{ tokens: { symbol: string }[] }>("/api/universe", 300000);
-  const universe = useMemo(() => new Set((uni.data?.tokens ?? []).map((t) => t.symbol)), [uni.data]);
-  const [feedReport, setFeedReport] = useState<FeedResult[] | null>(null);
-  const analyses = usePoll<{ analyses: AnalysisSummary[]; failed: number }>("/api/analyze", 8000);
-  const score = usePoll<{ stats: Stats }>("/api/scorecard", 30000);
+  const current = checks.find((c) => c.id === selected);
+  const live = current?.status === "running";
+  const detail = usePoll<{ check: CheckRow; events: GuardEvent[] }>(selected ? `/api/guard/${selected}` : null, live ? 1200 : 4000);
+  const check = detail.data?.check.id === selected ? detail.data.check : current;
+  const events = detail.data?.check.id === selected ? detail.data.events : [];
 
-  async function refresh() {
-    setRefreshing(true);
-    try {
-      const r = await fetch("/api/news?refresh=1", { cache: "no-store" }).then((x) => x.json());
-      setFeedReport(r.feeds ?? null);
-    } finally {
-      news.reload();
-      setRefreshing(false);
-    }
-  }
-
-  async function analyze(newsId: string, mode: "live" | "backtest") {
-    setBusy(`${newsId}:${mode}`);
+  async function run(scenario: string) {
+    setBusy(scenario);
     setError(null);
-    const res = await fetch("/api/analyze", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ newsId, mode }) });
+    const res = await fetch("/api/guard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scenario }) });
     const b = await res.json();
     setBusy(null);
-    if (!res.ok) return setError(b.error ?? "Analiz başlatılamadı");
-    router.push(`/analiz/${b.id}`);
+    if (!res.ok) return setError(b.error ?? "Denetim başlatılamadı");
+    setSelected(b.id);
+    overview.reload();
   }
 
-  async function submitManual(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    const res = await fetch("/api/news", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ title, body, publishedAt: Date.now() }),
-    });
+  async function answer(approve: boolean) {
+    if (!check) return;
+    setAnswering(true);
+    const res = await fetch(`/api/guard/${check.id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ approve }) });
     const b = await res.json();
-    if (!res.ok) return setError(b.error);
-    setTitle("");
-    setBody("");
-    setShowForm(false);
-    news.reload();
-    analyze(b.news.id, "live");
+    setAnswering(false);
+    if (!res.ok) setError(b.error ?? "Yanıt kaydedilemedi");
+    detail.reload();
+    overview.reload();
   }
 
-  const s = score.data?.stats;
+  const o = overview.data;
+  const chain = o?.layers.chain;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">
-          Haber gelir. Ajanlar tartışır. <span className="text-signal">Karne tutulur.</span>
-        </h1>
-        <p className="max-w-3xl text-sm text-ink-300">
-          Her analiz; haberi ayrıştıran, OKX TR tokenlarına etkisini çıkaran, boğa ve ayı tezlerini tartıştıran ve ATK ile canlı piyasayı kontrol eden ajanlardan geçer.
-          Tahminler sonuç belli olmadan kaydedilir ve gerçek fiyatla puanlanır.
-        </p>
-      </div>
+      <section className="flex flex-wrap items-end justify-between gap-4">
+        <div className="max-w-2xl">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-signal">SignalMind Guard</div>
+          <h1 className="mt-1 font-display text-3xl font-semibold leading-tight tracking-tight sm:text-[34px]">Ajanınız işlem yapmadan önce, kanıtını göstersin.</h1>
+          <p className="mt-2 text-[14px] leading-relaxed text-ink-300">
+            Trading botunun her emri borsaya gitmeden önce denetlenir: gerekçesindeki haber bağımsız kaynaklarda var mı, kanıtlar birbirinin kopyası mı, içinde manipülasyon var mı, bot yetkisinin içinde mi?
+            Karar gerekçesiyle verilir, kanıtına bağlanır ve ajanın zincir üstü kimliğiyle kaydedilir. Fiyat tahmini yapılmaz.
+          </p>
+        </div>
+      </section>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="İsabet" value={pct(s?.accuracy)} hint={s ? `${s.correct}/${s.n} puanlanmış tahmin` : "…"} accent />
-        <Stat label="Momentum kuralı" value={pct(s?.baselines.momentum)} hint="Aynı tahminlerde basit kural" />
-        <Stat label="Brier skoru" value={s?.brier != null ? s.brier.toFixed(3) : "—"} hint="Düşük = daha iyi kalibrasyon" />
-        <Stat label="Bekleyen" value={s?.pending ?? "—"} hint="Ufku dolmamış tahmin" />
-      </div>
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Layer
+          name="Kimlik"
+          value={chain?.configured ? `ERC-8004 ajan #${chain.agentId} · Fuji` : "Avalanche Fuji · kurulum bekliyor"}
+          ok={chain?.configured ? true : chain?.agentAddress ? "warn" : false}
+          hint={chain?.agentAddress ? `cüzdan ${chain.agentAddress.slice(0, 8)}…${chain.agentAddress.slice(-4)}` : "Kararlar yerelde hash'leniyor"}
+        />
+        <Layer
+          name="Araçlar"
+          value="OKX Agent Trade Kit (MCP)"
+          ok={o ? (o.layers.atkNewsCredentials ? true : "warn") : false}
+          hint={o?.layers.atkNewsCredentials ? "market + news modülleri, salt okunur" : "market açık · news için okuma anahtarı yok → RSS yedeği"}
+        />
+        <Layer name="Sınırlar" value={o ? `${o.trust.tier.name} · emir ≤ ${o.trust.tier.maxOrderUsd} $` : "…"} ok={true} hint="Salt okunur · emir göndermez · araç izin listesi" />
+        <Layer name="Model" value={o ? `${o.layers.ai.label} · ${o.layers.ai.model}` : "…"} ok={o?.layers.ai.configured ?? false} hint="Karar sonrası kod kuralları uygulanır" />
+      </section>
 
-      {error && <div className="rounded-xl border border-down/40 bg-down/10 px-4 py-3 text-sm text-down">{error}</div>}
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        <Card
-          className="lg:col-span-7"
-          title="Haber akışı"
-          action={
-            <div className="flex items-center gap-2">
-              <button onClick={() => setShowForm((v) => !v)} className="rounded-lg px-2.5 py-1 text-xs text-ink-200 ring-1 ring-ink-600 hover:bg-ink-800">
-                + Kendi haberin
-              </button>
-              <button onClick={refresh} disabled={refreshing} className="rounded-lg bg-ink-800 px-2.5 py-1 text-xs text-ink-100 ring-1 ring-ink-600 hover:bg-ink-700 disabled:opacity-50">
-                {refreshing ? "Çekiliyor…" : "RSS yenile"}
-              </button>
+      <div className="grid gap-6 lg:grid-cols-12">
+        <div className="space-y-6 lg:col-span-4">
+          <Card title="Trading ajanından emir">
+            <p className="mb-3 text-[12.5px] text-ink-300">
+              <span className="text-ink-100">{o?.bot ?? "MomentumBot"}</span> okuduğu her habere göre işlem açan basit bir demo bottur. Bir senaryo seçin; emir önce Guard&apos;a gelir.
+            </p>
+            <div className="space-y-2">
+              {(o?.scenarios ?? []).map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => run(s.id)}
+                  disabled={busy !== null}
+                  className="group w-full rounded-lg bg-ink-900/60 px-3 py-2.5 text-left ring-1 ring-ink-700 transition hover:bg-ink-800 hover:ring-signal/40 disabled:opacity-50"
+                >
+                  <div className="flex items-center gap-2 text-[13.5px] text-ink-100">
+                    {s.title}
+                    <span className="ml-auto text-[11px] text-signal opacity-0 transition group-hover:opacity-100">{busy === s.id ? "gönderiliyor…" : "denet →"}</span>
+                  </div>
+                  <div className="mt-0.5 text-[11.5px] text-ink-400">{s.expectation}</div>
+                </button>
+              ))}
             </div>
-          }
-        >
-          {showForm && (
-            <form onSubmit={submitManual} className="rise mb-5 space-y-2.5 rounded-xl bg-ink-900 p-4 ring-1 ring-ink-700">
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Başlık — örn. SEC, Solana spot ETF başvurusunu onayladı"
-                className="w-full rounded-lg bg-ink-850 px-3 py-2 text-sm outline-none ring-1 ring-ink-600 focus:ring-signal"
-              />
-              <textarea
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                rows={3}
-                placeholder="Haber metni (isteğe bağlı)"
-                className="w-full rounded-lg bg-ink-850 px-3 py-2 text-sm outline-none ring-1 ring-ink-600 focus:ring-signal"
-              />
-              <div className="flex justify-end">
-                <button className="rounded-lg bg-signal px-3 py-1.5 text-sm font-semibold text-ink-950 hover:bg-signal-dim">Kaydet ve analiz et</button>
-              </div>
-            </form>
-          )}
-          {feedReport && (
-            <div className="num mb-3 rounded-lg bg-ink-900 px-3 py-2 text-[11px] text-ink-400 ring-1 ring-ink-800">
-              {feedReport.filter((f) => f.ok).length}/{feedReport.length} kaynak yanıt verdi ·{" "}
-              {feedReport.reduce((a, f) => a + f.count, 0)} öğe okundu
-              {feedReport.some((f) => !f.ok) && (
-                <span className="text-down"> · yanıt vermeyen: {feedReport.filter((f) => !f.ok).map((f) => f.source).join(", ")}</span>
-              )}
-            </div>
-          )}
-          <NewsFeed
-            news={news.data?.news ?? null}
-            sources={news.data?.sources ?? []}
-            universe={universe}
-            filter={filter}
-            setFilter={setFilter}
-            busy={busy}
-            onAnalyze={analyze}
-          />
-        </Card>
-
-        <div className="space-y-6 lg:col-span-5">
-          <Card title="Piyasa ısı haritası · 24s" action={<Link href="/tokenlar" className="text-xs text-ink-400 hover:text-ink-100">tümü →</Link>}>
-            <Heatmap />
-            <p className="mt-2 text-[11px] text-ink-500">Hacme göre en likit 24 OKX TR tokenı. Renk yoğunluğu ±%8&apos;de doygunlaşır.</p>
+            {error && <div className="mt-3 rounded-lg bg-down/10 px-3 py-2 text-[12.5px] text-down ring-1 ring-down/30">{error}</div>}
           </Card>
-
-          <TurkeyCard />
-
-          {analyses.data && analyses.data.analyses.some((a) => a.impacts.length) && (
-            <Card title="Etki matrisi · token × analiz">
-              <ImpactMatrix analyses={analyses.data.analyses} columns={8} rows={8} />
+          {o && (
+            <Card title="Kanıtla büyüyen yetki">
+              <TrustLadder trust={o.trust} tiers={o.tiers} />
             </Card>
           )}
+        </div>
 
-          <Card title="Son analizler" action={<Link href="/karne" className="text-xs text-signal hover:underline">Karne →</Link>}>
-            {!analyses.data ? (
-              <div className="shimmer h-24 rounded-xl bg-ink-850" />
-            ) : analyses.data.analyses.length === 0 ? (
-              <Empty>İlk analizi soldaki bir haberden başlatın.</Empty>
+        <div className="space-y-6 lg:col-span-8">
+          {!check ? (
+            <Card title="Denetim">
+              <Empty>Soldan bir senaryo seçerek ilk denetimi başlatın.</Empty>
+            </Card>
+          ) : (
+            <>
+              <Card title="Emir önerisi" action={<DecisionBadge decision={check.final_decision ?? check.decision} />}>
+                <ProposalCard check={check} />
+              </Card>
+              <div className="grid gap-6 xl:grid-cols-5">
+                <Card title="Ajan izi" className="xl:col-span-2" action={live ? <Badge tone="signal">canlı</Badge> : undefined}>
+                  <Timeline events={events} running={live} />
+                </Card>
+                <Card title="Karar" className="xl:col-span-3">
+                  {check.status === "error" ? (
+                    <div className="rounded-lg bg-down/10 px-3 py-2 text-[13px] text-down ring-1 ring-down/30">Denetim tamamlanamadı: {check.error}</div>
+                  ) : !check.verdict ? (
+                    <Empty>Ajan kanıt topluyor; karar burada görünecek.</Empty>
+                  ) : (
+                    <VerdictPanel
+                      check={check}
+                      footer={
+                        <>
+                          {check.status === "awaiting_human" && (
+                            <div className="rounded-xl bg-judge/10 p-4 ring-1 ring-judge/30">
+                              <div className="text-[13px] font-medium text-judge">İnsan onay noktası</div>
+                              <div className="mt-1 text-[13px] text-ink-200">{check.verdict.human_question}</div>
+                              <div className="mt-3 flex gap-2">
+                                <button onClick={() => answer(true)} disabled={answering} className="rounded-lg bg-up/15 px-4 py-2 text-sm font-medium text-up ring-1 ring-up/40 hover:bg-up/25 disabled:opacity-50">
+                                  Tek seferlik onayla
+                                </button>
+                                <button onClick={() => answer(false)} disabled={answering} className="rounded-lg bg-down/15 px-4 py-2 text-sm font-medium text-down ring-1 ring-down/40 hover:bg-down/25 disabled:opacity-50">
+                                  Reddet
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          {check.verdict_hash && (
+                            <div className="rounded-lg bg-ink-900/70 px-3 py-2.5 ring-1 ring-ink-700">
+                              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-400">Karar kaydı</div>
+                              <div className="num mt-1 break-all text-[11px] text-ink-300">hash {check.verdict_hash}</div>
+                              {check.chain_tx ? (
+                                <a href={`${chain?.explorerBase ?? "https://testnet.snowtrace.io"}/tx/${check.chain_tx}`} target="_blank" rel="noreferrer" className="num mt-1 block break-all text-[11px] text-atk hover:underline">
+                                  Avalanche Fuji tx {check.chain_tx} ↗
+                                </a>
+                              ) : (
+                                <div className="mt-1 text-[11px] text-ink-500">{check.chain_error ? `Zincir kaydı başarısız: ${check.chain_error}` : "Zincire henüz yazılmadı"}</div>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      }
+                    />
+                  )}
+                </Card>
+              </div>
+            </>
+          )}
+
+          <Card title="Denetim geçmişi">
+            {checks.length === 0 ? (
+              <Empty>Henüz denetim yok.</Empty>
             ) : (
-              <ul className="space-y-2.5">
-                {analyses.data.analyses.slice(0, 12).map((a) => (
-                  <li key={a.id}>
-                    <Link href={`/analiz/${a.id}`} className="block rounded-xl bg-ink-900/60 p-3.5 ring-1 ring-ink-700 transition hover:bg-ink-850 hover:ring-ink-500">
-                      <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-                        {a.status === "running" && (
-                          <Badge tone="signal">
-                            <span className="pulse-ring h-1.5 w-1.5 rounded-full bg-signal" /> çalışıyor
-                          </Badge>
-                        )}
-                        {a.trigger === "auto" && <Badge tone="atk">otonom</Badge>}
-                        {a.mode === "backtest" && <Badge tone="judge">geriye dönük</Badge>}
-                        {a.event_type && <Badge>{EVENT_LABEL[a.event_type] ?? a.event_type}</Badge>}
-                        {a.winner && <Badge tone={a.winner === "bull" ? "up" : a.winner === "bear" ? "down" : "neutral"}>{WINNER_LABEL[a.winner]}</Badge>}
-                        <span className="ml-auto text-[11px] text-ink-400">{timeAgo(a.created_at)}</span>
-                      </div>
-                      <div className="line-clamp-2 text-sm font-medium text-ink-100">{a.headline ?? a.title}</div>
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-                        {a.tokens.map((t) => (
-                          <span key={t} className="num rounded bg-ink-800 px-1.5 py-0.5 text-ink-200">
-                            {t}
-                          </span>
-                        ))}
-                        {a.correct + a.wrong + a.pending > 0 && (
-                          <span className="ml-auto flex gap-2">
-                            <span className="text-up">✓ {a.correct}</span>
-                            <span className="text-down">✗ {a.wrong}</span>
-                            <span className="text-judge">⏳ {a.pending}</span>
-                          </span>
-                        )}
-                      </div>
-                    </Link>
-                  </li>
+              <div className="divide-y divide-ink-700">
+                {checks.map((c) => (
+                  <button key={c.id} onClick={() => setSelected(c.id)} className={`flex w-full flex-wrap items-center gap-3 px-1 py-2.5 text-left text-[13px] hover:bg-ink-800/50 ${c.id === selected ? "bg-ink-800/60" : ""}`}>
+                    <span className="num w-20 shrink-0 text-[11px] text-ink-400">{timeAgo(c.created_at)}</span>
+                    <span className={c.proposal.side === "buy" ? "text-up" : "text-down"}>{c.proposal.side === "buy" ? "ALIM" : "SATIM"}</span>
+                    <span className="num text-ink-100">{c.proposal.instId}</span>
+                    <span className="num text-ink-300">{c.proposal.notionalUsd} $</span>
+                    <span className="ml-auto flex items-center gap-2">
+                      {c.status === "running" ? <Badge tone="signal">çalışıyor</Badge> : c.status === "error" ? <Badge tone="down">hata</Badge> : <DecisionBadge decision={c.final_decision ?? c.decision} />}
+                      {c.decided_by === "insan" && <Badge tone="judge">insan</Badge>}
+                      {c.chain_tx && <Badge tone="atk">⛓ Fuji</Badge>}
+                    </span>
+                  </button>
                 ))}
-              </ul>
+              </div>
             )}
-            {analyses.data && analyses.data.failed > 0 && (
-              <p className="mt-3 text-xs text-ink-500">{analyses.data.failed} başarısız analiz listede gösterilmiyor; ilgili haberden yeniden başlatılabilir.</p>
-            )}
-          </Card>
-
-          <AutopilotCard />
-
-          <Card title="Nasıl çalışır">
-            <ol className="space-y-3 text-sm">
-              {[
-                ["News Analyst", "Haberi sınıflandırır, kaynağın güvenilirliğini puanlar, olguyu söylentiden ayırır."],
-                ["Impact Radar", "OKX TR'de işlem gören 130+ token içinden etkilenenleri ve neden-sonuç zincirini çıkarır."],
-                ["Bull vs Bear + Hakem", "İki ajan karşıt tezleri kanıtla savunur; hakem retoriğe değil kanıta göre puanlar."],
-                ["Strategy & Risk", "ATK MCP araçlarıyla canlı mum, RSI ve emir defterine bakar; geçmiş karneye göre güvenini ayarlar."],
-                ["Tahmin Karnesi", "Tahminler 1 saat ve 24 saat sonra gerçek fiyatla puanlanır; tutmayanlar da gösterilir."],
-              ].map(([t, d], i) => (
-                <li key={t} className="flex gap-3">
-                  <span className="num grid h-6 w-6 shrink-0 place-items-center rounded-md bg-ink-800 text-xs text-signal">{i + 1}</span>
-                  <div>
-                    <div className="font-medium text-ink-100">{t}</div>
-                    <div className="text-ink-300">{d}</div>
-                  </div>
-                </li>
-              ))}
-            </ol>
-            <div className="mt-4 flex items-center gap-2 text-xs text-ink-400">
-              <DirPill dir="up" /> <DirPill dir="flat" /> <DirPill dir="down" />
-              <span>1s için ±%0,4, 24s için ±%1,5 içi “yatay” sayılır.</span>
-            </div>
           </Card>
         </div>
       </div>
