@@ -29,8 +29,13 @@ function corroboratedStory(prefer: string[]): { asset: string; story: StoryRow }
     (s) => s.sources.length >= 2 && Date.now() - (s.published_at ?? s.fetched_at) < 48 * 3_600_000 && POSITIVE.test(s.title) && !NEGATIVE.test(s.title),
   );
   for (const asset of prefer) {
-    const story = recent.filter((s) => NAMES[asset].test(s.title)).sort((a, b) => b.sources.length - a.sources.length)[0];
-    if (story) return { asset, story };
+    // Story clustering is keyword-based and can glue unrelated headlines together: keep only
+    // sources that name the asset, and require two distinct outlets among them.
+    const candidates = recent
+      .map((s) => ({ ...s, sources: s.sources.filter((x) => NAMES[asset].test(x.title)) }))
+      .filter((s) => new Set(s.sources.map((x) => x.source)).size >= 2)
+      .sort((a, b) => b.sources.length - a.sources.length);
+    if (candidates[0]) return { asset, story: candidates[0] };
   }
   return null;
 }
@@ -45,8 +50,8 @@ function fallbackStory(): { asset: string; story: StoryRow } {
   const now = Date.now();
   const items = FALLBACK.map((f, i) => ({ id: newsId(f.title, null), source: f.source, title: f.title, summary: "Temsili demo haberi.", url: null, published_at: now - (90 - i * 20) * 60_000, fetched_at: now }));
   saveNews(items);
-  const story = listNews(400).find((s) => s.sources.some((x) => x.id === items[0].id));
-  return { asset: "BTC", story: story! };
+  const story = listNews(400).find((s) => s.sources.some((x) => x.id === items[0].id))!;
+  return { asset: "BTC", story: { ...story, sources: story.sources.filter((x) => x.source.startsWith("Temsili")) } };
 }
 
 function fromStory(s: StoryRow) {

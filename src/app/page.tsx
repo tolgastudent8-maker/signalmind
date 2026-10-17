@@ -87,6 +87,15 @@ export default function GuardConsole() {
     overview.reload();
   }
 
+  async function reset() {
+    if (!window.confirm("Yerel denetim geçmişi silinsin mi? Botun yetki seviyesi sıfırlanır; zincirdeki kayıtlar kalır.")) return;
+    const res = await fetch("/api/guard", { method: "DELETE" });
+    const b = await res.json();
+    if (!res.ok) setError(b.error ?? "Sıfırlanamadı");
+    setSelected(null);
+    overview.reload();
+  }
+
   async function answer(approve: boolean) {
     if (!check) return;
     setAnswering(true);
@@ -156,7 +165,14 @@ export default function GuardConsole() {
             {error && <div className="mt-3 rounded-lg bg-down/10 px-3 py-2 text-[12.5px] text-down ring-1 ring-down/30">{error}</div>}
           </Card>
           {o && (
-            <Card title="Kanıtla büyüyen yetki">
+            <Card
+              title="Kanıtla büyüyen yetki"
+              action={
+                <button onClick={reset} disabled={busy !== null || live} className="text-[11px] text-ink-400 hover:text-ink-100 disabled:opacity-40" title="Yerel denetim geçmişini siler; zincir kayıtları kalır">
+                  demoyu sıfırla
+                </button>
+              }
+            >
               <TrustLadder trust={o.trust} tiers={o.tiers} />
             </Card>
           )}

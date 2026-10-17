@@ -62,4 +62,12 @@ export function guardOverview() {
   };
 }
 
+/** Demo reset: clears local audit history (and with it the bot's earned tier). On-chain records stay. */
+export function resetGuardHistory(): number {
+  const running = gRun.__signalmindGuardRunning ?? new Map();
+  if (running.size) return -1;
+  db().exec(`DELETE FROM guard_events; `);
+  return Number(db().prepare(`DELETE FROM guard_checks`).run().changes);
+}
+
 export { waitForCheck };
