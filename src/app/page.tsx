@@ -59,6 +59,118 @@ function TrustLadder({ trust, tiers }: { trust: Trust; tiers: Overview["tiers"] 
   );
 }
 
+type Verify = {
+  ok: boolean;
+  recomputed: string;
+  hashMatches: boolean;
+  decision?: string;
+  decisionMatches?: boolean | null;
+  agentMatches?: boolean | null;
+  onChain?: { recorded: boolean; recordedAt: number | null; block: number | null; agentId: string | null; decision: string | null };
+  error?: string;
+};
+
+const DECISION_TR: Record<string, string> = { approve: "onay", reject: "ret", escalate: "insan onayı" };
+
+/** Re-hashes the stored verdict and reads Fuji for it: the check a juror would otherwise do by hand. */
+function VerifyOnChain({ checkId }: { checkId: string }) {
+  const [state, setState] = useState<"idle" | "busy" | Verify>("idle");
+  async function go() {
+    setState("busy");
+    const r = await fetch(`/api/guard/${checkId}/verify`, { cache: "no-store" });
+    setState((await r.json()) as Verify);
+  }
+  if (state === "idle" || state === "busy")
+    return (
+      <button onClick={go} disabled={state === "busy"} className="mt-2 rounded-lg bg-atk/10 px-3 py-1.5 text-[12.5px] font-medium text-atk ring-1 ring-atk/40 hover:bg-atk/20 disabled:opacity-60">
+        {state === "busy" ? "Fuji okunuyor…" : "⛓ Zincirde doğrula"}
+      </button>
+    );
+  const v = state;
+  const row = (ok: boolean | null | undefined, text: string) => (
+    <li className="flex gap-2">
+      <span className={ok ? "text-up" : ok === false ? "text-down" : "text-ink-500"}>{ok ? "✓" : ok === false ? "✕" : "·"}</span>
+      <span className="text-ink-200">{text}</span>
+    </li>
+  );
+  return (
+    <div className={`mt-2 rounded-lg px-3 py-2.5 ring-1 ${v.ok ? "bg-up/5 ring-up/30" : "bg-down/5 ring-down/30"}`}>
+      <div className={`text-[13px] font-semibold ${v.ok ? "text-up" : "text-down"}`}>{v.ok ? "✓ Doğrulandı: kayıt değiştirilmemiş" : "✕ Doğrulanamadı"}</div>
+      <ul className="num mt-1.5 space-y-1 text-[11.5px]">
+        {row(v.hashMatches, `Karar kaydı yeniden hash'lendi: ${v.recomputed.slice(0, 18)}… ${v.hashMatches ? "kayıtla aynı" : "kayıtla FARKLI"}`)}
+        {v.onChain && row(v.onChain.recorded, v.onChain.recorded ? `Fuji'de kayıtlı · blok #${v.onChain.block ?? "?"} · ${v.onChain.recordedAt ? new Date(v.onChain.recordedAt).toLocaleString("tr-TR") : ""}` : "Bu hash Fuji'de yok")}
+        {v.onChain && v.decisionMatches !== undefined && row(v.decisionMatches, `Zincirdeki karar: ${DECISION_TR[v.onChain.decision ?? ""] ?? "—"} (kayıttaki: ${DECISION_TR[v.decision ?? ""] ?? "—"})`)}
+        {v.onChain && v.agentMatches !== undefined && row(v.agentMatches, `Yazan: ERC-8004 ajan #${v.onChain.agentId ?? "—"}`)}
+        {v.error && row(false, v.error)}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * An order typed by hand (e.g. by a juror): the same path any external trading agent uses,
+ * POST /api/guard with a full proposal. One evidence item per line; "Kaynak: metin" names its source.
+ */
+function CustomOrder({ bot, assets, disabled, busy, onSubmit }: { bot: string; assets: string[]; disabled: boolean; busy: boolean; onSubmit: (p: unknown) => void }) {
+  const [open, setOpen] = useState(false);
+  const [coin, setCoin] = useState("ETH");
+  const [side, setSide] = useState<"buy" | "sell">("buy");
+  const [usd, setUsd] = useState("200");
+  const [reason, setReason] = useState("");
+  const [evidence, setEvidence] = useState("");
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const items = evidence
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .slice(0, 5)
+      .map((l) => {
+        const m = l.match(/^([^:]{2,40}):\s*(.+)$/);
+        return m ? { source: m[1].trim(), text: m[2] } : { source: "Bot kaynağı", text: l };
+      });
+    onSubmit({ bot, side, instId: `${coin.trim().toUpperCase()}-USDT`, notionalUsd: Number(usd), reason: reason.trim(), evidence: items });
+  }
+
+  const field = "w-full rounded-lg bg-ink-900 px-2.5 py-1.5 text-[13px] text-ink-100 ring-1 ring-ink-700 outline-none focus:ring-signal/50";
+  if (!open)
+    return (
+      <button onClick={() => setOpen(true)} disabled={disabled} className="mt-2 w-full rounded-lg border border-dashed border-ink-600 px-3 py-2.5 text-left text-[13px] text-ink-300 hover:border-signal/50 hover:text-ink-100 disabled:opacity-50">
+        ✎ Kendi emrini yaz <span className="text-ink-500">— jüri de deneyebilir</span>
+      </button>
+    );
+  return (
+    <form onSubmit={submit} className="mt-2 space-y-2 rounded-lg bg-ink-900/60 p-3 ring-1 ring-signal/30">
+      <div className="flex items-center justify-between">
+        <span className="text-[12px] font-semibold uppercase tracking-[0.12em] text-signal">Kendi emrin</span>
+        <button type="button" onClick={() => setOpen(false)} className="text-[11px] text-ink-400 hover:text-ink-100">
+          kapat
+        </button>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <select value={side} onChange={(e) => setSide(e.target.value as "buy" | "sell")} className={field} aria-label="Yön">
+          <option value="buy">ALIM</option>
+          <option value="sell">SATIM</option>
+        </select>
+        <input value={coin} onChange={(e) => setCoin(e.target.value)} list="guard-assets" className={field} aria-label="Coin" placeholder="ETH" />
+        <input value={usd} onChange={(e) => setUsd(e.target.value)} type="number" min="1" className={field} aria-label="Tutar (USD)" placeholder="USD" />
+        <datalist id="guard-assets">
+          {assets.map((a) => (
+            <option key={a} value={a} />
+          ))}
+        </datalist>
+      </div>
+      <textarea value={reason} onChange={(e) => setReason(e.target.value)} required minLength={5} maxLength={600} rows={2} className={field} placeholder="Gerekçe: ör. Ethereum spot ETF'lerine rekor giriş oldu, alıyorum" />
+      <textarea value={evidence} onChange={(e) => setEvidence(e.target.value)} rows={3} maxLength={3000} className={field} placeholder={"Kanıtlar (her satır bir kaynak, isteğe bağlı)\nTelegram: ETF girişleri rekor kırdı!\nX: ETH yarın 5000$"} />
+      <button type="submit" disabled={disabled} className="w-full rounded-lg bg-signal/15 px-3 py-2 text-[13px] font-medium text-signal ring-1 ring-signal/40 hover:bg-signal/25 disabled:opacity-50">
+        {busy ? "gönderiliyor…" : "Guard'a denetlet →"}
+      </button>
+      <p className="text-[11px] text-ink-500">Aynı yol, dışarıdaki her trading ajanının kullandığı API: POST /api/guard</p>
+    </form>
+  );
+}
+
 export default function GuardConsole() {
   const overview = usePoll<Overview>("/api/guard", 5000);
   const [selected, setSelected] = useState<string | null>(null);
@@ -77,10 +189,10 @@ export default function GuardConsole() {
   const check = detail.data?.check.id === selected ? detail.data.check : current;
   const events = detail.data?.check.id === selected ? detail.data.events : [];
 
-  async function run(scenario: string) {
+  async function run(scenario: string, proposal?: unknown) {
     setBusy(scenario);
     setError(null);
-    const res = await fetch("/api/guard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scenario }) });
+    const res = await fetch("/api/guard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(proposal ? { proposal } : { scenario }) });
     const b = await res.json();
     setBusy(null);
     if (!res.ok) return setError(b.error ?? "Denetim başlatılamadı");
@@ -165,6 +277,7 @@ export default function GuardConsole() {
                 </button>
               ))}
             </div>
+            <CustomOrder bot={o?.bot ?? "MomentumBot"} assets={o?.allowedAssets ?? []} disabled={busy !== null} busy={busy === "custom"} onSubmit={(p) => run("custom", p)} />
             {error && <div className="mt-3 rounded-lg bg-down/10 px-3 py-2 text-[12.5px] text-down ring-1 ring-down/30">{error}</div>}
           </Card>
           {o && (
@@ -245,6 +358,7 @@ export default function GuardConsole() {
                               ) : (
                                 <div className="mt-1 text-[11px] text-ink-500">{check.chain_error ? `Zincir kaydı başarısız: ${check.chain_error}` : "Zincire henüz yazılmadı"}</div>
                               )}
+                              {check.chain_tx && <VerifyOnChain key={check.id} checkId={check.id} />}
                             </div>
                           )}
                         </>

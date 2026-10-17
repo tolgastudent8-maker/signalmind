@@ -121,6 +121,16 @@ Komut satırından tek bir denetim çalıştırmak için:
 node --env-file=.env.local --experimental-strip-types scripts/guard-run.ts rumor
 ```
 
+### Başka bir trading ajanını bağlamak
+
+Guard bir servis: herhangi bir trading ajanı emrini borsaya göndermeden önce şu çağrıyla denetletir (konsoldaki "Kendi emrini yaz" formu da aynı yolu kullanır):
+
+```bash
+curl -X POST http://localhost:3000/api/guard -H "content-type: application/json" -d "{\"proposal\":{\"bot\":\"MyBot\",\"side\":\"buy\",\"instId\":\"ETH-USDT\",\"notionalUsd\":200,\"reason\":\"ETH ETF'lerine rekor giriş\",\"evidence\":[{\"source\":\"Telegram\",\"text\":\"ETH ETF'lerine 2 milyar $ giriş!\"}]}}"
+```
+
+Yanıt `{"id": "…"}` döner. Sonuç `GET /api/guard/<id>` ile alınır (`final_decision`: approve / reject / escalate). Zincir kaydının bağımsız doğrulaması için `GET /api/guard/<id>/verify` çağrılır: karar yeniden hash'lenir, Fuji'deki kayıtla, kararla ve ajan kimliğiyle karşılaştırılır. Konsoldaki "⛓ Zincirde doğrula" düğmesi de bu çağrıyı yapar.
+
 Testler (politika, kopya tespiti, injection, kod bariyerleri, hash):
 
 ```bash

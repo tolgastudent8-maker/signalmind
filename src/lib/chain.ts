@@ -2,7 +2,7 @@
  * Avalanche Fuji katmanı: Guard ajanının ERC-8004 kimliği ve karar (verdict) kayıtları.
  * Kimlik: resmi ERC-8004 IdentityRegistry (Fuji). Kararlar: contracts/SignalMindRegistry.sol.
  */
-import { createPublicClient, createWalletClient, fallback, http, keccak256, toBytes, type Hex } from "viem";
+import { createPublicClient, createWalletClient, fallback, http, keccak256, parseEventLogs, toBytes, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { avalancheFuji } from "viem/chains";
 
@@ -137,6 +137,48 @@ export function canonicalJson(payload: unknown): string {
 /** keccak256 of the canonical (sorted-key) JSON encoding of `payload`. */
 export function verdictHash(payload: unknown): `0x${string}` {
   return keccak256(toBytes(canonicalJson(payload)));
+}
+
+export type OnChainVerdict = {
+  recorded: boolean;
+  recordedAt: number | null; // unix ms, from the contract
+  txHash: string | null;
+  block: number | null;
+  agentId: string | null;
+  decision: "approve" | "reject" | "escalate" | null;
+  subject: string | null;
+  recorder: string | null;
+};
+
+const DECISION_NAMES = ["approve", "reject", "escalate"] as const;
+
+/**
+ * Reads a verdict back from Fuji: the contract's `recordedAt(hash)` and, given its tx,
+ * the VerdictRecorded event (agentId, decision, recorder) — what a third party would check.
+ */
+export async function readVerdict(hash: `0x${string}`, txHash?: string | null): Promise<OnChainVerdict> {
+  const st = chainStatus();
+  if (!st.registry) throw new Error("CHAIN_REGISTRY tanımlı değil.");
+  const pub = publicClient();
+  const at = await withTimeout(
+    pub.readContract({ address: st.registry as Hex, abi: signalMindRegistryAbi, functionName: "recordedAt", args: [hash] }),
+    15_000,
+    "Fuji RPC yanıt vermedi.",
+  );
+  const out: OnChainVerdict = { recorded: at > 0n, recordedAt: at > 0n ? Number(at) * 1000 : null, txHash: txHash ?? null, block: null, agentId: null, decision: null, subject: null, recorder: null };
+  if (!txHash) return out;
+  const rc = await withTimeout(pub.getTransactionReceipt({ hash: txHash as Hex }), 15_000, "Fuji RPC yanıt vermedi.");
+  const ev = parseEventLogs({ abi: signalMindRegistryAbi, logs: rc.logs, eventName: "VerdictRecorded" }).find(
+    (l) => l.address.toLowerCase() === st.registry!.toLowerCase() && l.args.verdictHash.toLowerCase() === hash.toLowerCase(),
+  );
+  out.block = Number(rc.blockNumber);
+  if (ev) {
+    out.agentId = ev.args.agentId.toString();
+    out.decision = DECISION_NAMES[ev.args.decision] ?? null;
+    out.subject = ev.args.subject;
+    out.recorder = ev.args.recorder;
+  }
+  return out;
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number, msg: string): Promise<T> {
