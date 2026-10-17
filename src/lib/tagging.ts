@@ -42,6 +42,21 @@ export const NAMES: Record<string, string> = {
   zcash: "ZEC",
   "pudgy penguins": "PENGU",
   render: "RENDER",
+  polygon: "POL",
+  "internet computer": "ICP",
+  "fetch.ai": "FET",
+  stacks: "STX",
+  "jupiter": "JUP",
+  dogwifhat: "WIF",
+  apecoin: "APE",
+  "cronos": "CRO",
+  "axie infinity": "AXS",
+  floki: "FLOKI",
+  "the sandbox": "SAND",
+  ondo: "ONDO",
+  bittensor: "TAO",
+  "sei network": "SEI",
+  "shiba": "SHIB",
 };
 
 export function tagTokens(text: string, universe: Set<string>): string[] {
