@@ -59,11 +59,24 @@ test("an approval backed by two independent outlets stands", () => {
   assert.deepEqual(v.overrides, []);
 });
 
-test("invented evidence ids are dropped and the approval is escalated", () => {
+test("invented evidence ids are dropped and the approval is refused", () => {
   const v = applyGuardrails(verdict({ claims: [{ claim: "X", status: "verified", independent_sources: 2, evidence_ids: ["rss:a", "rss:FAKE"], note: "" }] }), reg, okPolicy, 0);
   assert.deepEqual(v.unknownEvidence, ["rss:FAKE"]);
   assert.equal(v.claims[0].status, "unverified");
-  assert.equal(v.decision, "escalate");
+  assert.equal(v.decision, "reject");
+});
+
+test("an unverified rationale is rejected even when the model escalates (no evidence, no order)", () => {
+  const unverified = [{ claim: "300 BTC ağa eklendi", status: "unverified" as const, independent_sources: 0, evidence_ids: [], note: "" }];
+  const v = applyGuardrails(verdict({ decision: "escalate", human_question: "Yine de onay?", claims: unverified }), reg, okPolicy, 0);
+  assert.equal(v.decision, "reject");
+  assert.equal(v.human_question, "");
+});
+
+test("an over-limit order with an unverified rationale is rejected, not escalated", () => {
+  const big = checkPolicy({ bot: "T", side: "buy", instId: "BTC-USDT", notionalUsd: 3000, reason: "", evidence: [] });
+  const unverified = [{ claim: "X", status: "unverified" as const, independent_sources: 0, evidence_ids: [], note: "" }];
+  assert.equal(applyGuardrails(verdict({ claims: unverified }), reg, big, 0).decision, "reject");
 });
 
 test("detected injection forces a rejection whatever the model said", () => {
